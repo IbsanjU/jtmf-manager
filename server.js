@@ -152,6 +152,9 @@ async function router(req, res) {
     if (pathname === '/app' || pathname === '/app.html') {
       return serveStatic(res, path.join(PUBLIC_DIR, 'app.html'));
     }
+    if (pathname === '/analyzer' || pathname === '/analyzer.html') {
+      return serveStatic(res, path.join(PUBLIC_DIR, 'analyzer.html'));
+    }
     const filePath = path.join(PUBLIC_DIR, pathname);
     if (filePath.startsWith(PUBLIC_DIR) && fs.existsSync(filePath)) {
       return serveStatic(res, filePath);

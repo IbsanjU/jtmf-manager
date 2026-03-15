@@ -6,11 +6,12 @@
 const S = {
   projectKey:    '',
   podPath:       '',
-  malcodes:      [],       // e.g. ['MALCODE1','MALCODE2']
-  activeSprint:  '',       // e.g. 'FY26Q4-S2'
-  currentFolder: null,     // { name, path, testsCount }
-  tests:         [],       // raw test objects from API
-  filteredTests: [],       // after search/filter
+  malcodes:      [],
+  activeSprint:  '',
+  readOnly:      false,
+  currentFolder: null,
+  tests:         [],
+  filteredTests: [],
   selectedIds:   new Set(),
   pageSize:      50,
   page:          0,
@@ -42,12 +43,14 @@ function loadConfig() {
   S.podPath      = saved.podPath      || '';
   S.malcodes     = saved.malcodes     || [];
   S.activeSprint = saved.activeSprint || '';
+  S.readOnly     = saved.readOnly     || false;
 }
 function saveConfig() {
   localStorage.setItem('jtmf_config', JSON.stringify({
     podPath:      S.podPath,
     malcodes:     S.malcodes,
-    activeSprint: S.activeSprint
+    activeSprint: S.activeSprint,
+    readOnly:     S.readOnly
   }));
 }
 function applyConfig() {
@@ -58,6 +61,11 @@ function applyConfig() {
   document.getElementById('setupPodPath').value   = S.podPath;
   document.getElementById('setupMalcodes').value  = S.malcodes.join(', ');
   document.getElementById('setupSprint').value    = S.activeSprint;
+  document.getElementById('setupReadOnly').checked = S.readOnly;
+
+  // Read-only banner
+  const banner = document.getElementById('readonlyBanner');
+  if (banner) banner.style.display = S.readOnly ? 'flex' : 'none';
 
   // Enable toolbar buttons if pod configured
   const hasPod = !!S.podPath;
@@ -89,9 +97,10 @@ async function logout() {
 
 // ─── Setup modal ──────────────────────────────────────────────────────────────
 function openSetupModal() {
-  document.getElementById('setupPodPath').value  = S.podPath;
-  document.getElementById('setupMalcodes').value = S.malcodes.join(', ');
-  document.getElementById('setupSprint').value   = S.activeSprint;
+  document.getElementById('setupPodPath').value   = S.podPath;
+  document.getElementById('setupMalcodes').value  = S.malcodes.join(', ');
+  document.getElementById('setupSprint').value    = S.activeSprint;
+  document.getElementById('setupReadOnly').checked = S.readOnly;
   showModal('setupModal');
 }
 
@@ -99,12 +108,14 @@ function saveSetup() {
   const podPath  = document.getElementById('setupPodPath').value.trim();
   const malRaw   = document.getElementById('setupMalcodes').value.trim();
   const sprint   = document.getElementById('setupSprint').value.trim().toUpperCase();
+  const readOnly = document.getElementById('setupReadOnly').checked;
 
   if (!podPath) { toast('POD path is required', 'error'); return; }
 
   S.podPath      = podPath.startsWith('/') ? podPath : '/' + podPath;
   S.malcodes     = malRaw.split(',').map(m => m.trim().toUpperCase()).filter(Boolean);
   S.activeSprint = sprint;
+  S.readOnly     = readOnly;
 
   saveConfig();
   applyConfig();
@@ -646,6 +657,7 @@ function updatePathPreview() {
 }
 
 async function confirmMove() {
+  if (S.readOnly) { toast('Read-only mode is ON — no changes will be made', 'error'); return; }
   const testType = document.getElementById('moveTestType').value;
   const sprint   = document.getElementById('moveSprint').value.trim().toUpperCase();
   const malcode  = document.getElementById('moveMalcode').value;
@@ -677,6 +689,7 @@ async function confirmMove() {
 }
 
 async function moveSingle(issueId, targetPath) {
+  if (S.readOnly) { toast('Read-only mode is ON — no changes will be made', 'error'); return; }
   try {
     await api('/api/tests/move', { method: 'POST', body: { testIssueIds: [issueId], targetPath } });
     toast(`✓ Moved ${issueId} to ${targetPath.split('/').slice(-3).join('/')}`, 'success');
@@ -689,6 +702,7 @@ async function moveSingle(issueId, targetPath) {
 
 // ─── MIGRATE & REPORT ─────────────────────────────────────────────────────────
 async function migrateSelected() {
+  if (S.readOnly) { toast('Read-only mode is ON — no changes will be made', 'error'); return; }
   if (S.selectedIds.size === 0) return;
 
   const ids = [...S.selectedIds];
@@ -806,6 +820,7 @@ function updateWizardPreview() {
 }
 
 async function runSprintWizard() {
+  if (S.readOnly) { toast('Read-only mode is ON — no changes will be made', 'error'); return; }
   const sprint  = document.getElementById('wizardSprint').value.trim().toUpperCase();
   const malcode = document.getElementById('wizardMalcode').value;
 
