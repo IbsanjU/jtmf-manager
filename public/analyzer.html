@@ -238,12 +238,18 @@
       <div id="bulkUpdateBar" style="display:none; flex: 1; align-items: center; gap: 10px; background: var(--bg); padding: 6px 14px; border-radius: var(--radius-sm); border: 1px solid var(--border);">
         <span style="font-size:12px; font-weight:600; color:var(--text-muted);">Apply to Selected:</span>
         <div class="path-builder-inline">
-          <select id="bulkType">
-            <option value="">— Type —</option>
-            <option value="functional">Functional</option>
-            <option value="regression-functional">Regression/Functional</option>
-            <option value="regression-e2e">Regression/E2E</option>
+          <select id="bulkCategory" onchange="updateBulkTargetAccess()">
+            <option value="">— Category —</option>
+            <option value="Functional">Functional</option>
+            <option value="Regression">Regression</option>
           </select>
+          <span class="path-sep">/</span>
+          <select id="bulkTarget" disabled>
+            <option value="">— Target —</option>
+            <option value="Functional">Functional</option>
+            <option value="E2E">E2E</option>
+          </select>
+          <span class="path-sep">/</span>
           <input type="text" id="bulkSprint" placeholder="Sprint (e.g. FY26Q4-S2)" style="width:140px;" />
           <select id="bulkMalcode">
             <option value="">— MALCODE —</option>

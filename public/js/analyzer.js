@@ -156,16 +156,19 @@ function buildRow(test, currentPath, allTests) {
   // Ensure uppercase for consistency
   malcodeFromPath = malcodeFromPath.toUpperCase();
 
-  // Suggest test type
-  let suggestedType = 'functional';
+  // Suggest test category and target
+  let suggestedCategory = 'Functional';
+  let suggestedTarget   = 'Functional'; // Note: Only used if Category is Regression, but we set a default
   if (isClone && isInFunctional) {
-    suggestedType = 'regression-functional';
+    suggestedCategory = 'Regression';
+    suggestedTarget   = 'Functional';
   } else if (isInRegression) {
-    suggestedType = pathParts.includes('E2E') ? 'regression-e2e' : 'regression-functional';
+    suggestedCategory = 'Regression';
+    suggestedTarget   = pathParts.includes('E2E') ? 'E2E' : 'Functional';
   }
 
-  const suggested = buildPath(suggestedType, sprintFromPath, malcodeFromPath);
-  const suggestedTags = suggestTags(suggestedType, sprintFromPath, malcodeFromPath, isClone);
+  const suggested = buildPath(suggestedCategory, suggestedTarget, sprintFromPath, malcodeFromPath);
+  const suggestedTags = suggestTags(suggestedCategory, suggestedTarget, sprintFromPath, malcodeFromPath, isClone);
 
   return {
     test,
@@ -173,38 +176,47 @@ function buildRow(test, currentPath, allTests) {
     isClone,
     isInFunctional,
     isInRegression,
-    suggestedType,
+    suggestedCategory,
+    suggestedTarget,
     sprintFromPath,
     malcodeFromPath,
     suggested,
     selectedTags: [...suggestedTags],  // Tags toggled on by default
-    customType:   suggestedType,
-    customSprint: sprintFromPath,
-    customMalcode: malcodeFromPath,
+    customCategory: suggestedCategory,
+    customTarget:   suggestedTarget,
+    customSprint:   sprintFromPath,
+    customMalcode:  malcodeFromPath,
   };
 }
 
 // ─── PATH BUILDER ─────────────────────────────────────────────────────────────
-function buildPath(testType, sprint, malcode) {
+function buildPath(category, target, sprint, malcode) {
   if (!sprint || !malcode || !AZ.podPath) return null;
   const base = AZ.podPath.replace(/\/$/, '');
-  switch (testType) {
-    case 'functional':            return `${base}/Functional/${sprint}/${malcode}/SIT`;
-    case 'regression-functional': return `${base}/Regression/Functional/${sprint}/${malcode}`;
-    case 'regression-e2e':        return `${base}/Regression/E2E/${sprint}/${malcode}`;
-    default: return null;
+  if (category === 'Functional') {
+    return `${base}/Functional/${sprint}/${malcode}/SIT`;
+  } else if (category === 'Regression') {
+    const t = target || 'Functional'; // default fallback
+    return `${base}/Regression/${t}/${sprint}/${malcode}`;
   }
+  return null;
 }
 
 // ─── TAG SUGGESTIONS ──────────────────────────────────────────────────────────
-function suggestTags(testType, sprint, malcode, isClone) {
+function suggestTags(category, target, sprint, malcode, isClone) {
   const tags = [];
   if (sprint)   tags.push(sprint);
   if (malcode)  tags.push(malcode);
-  if (testType === 'functional')            tags.push('SIT', 'Functional');
-  if (testType === 'regression-functional') tags.push('Regression', 'Functional');
-  if (testType === 'regression-e2e')        tags.push('Regression', 'E2E');
-  if (isClone)  tags.push('Cloned');
+  
+  if (category === 'Functional') {
+    tags.push('SIT', 'Functional');
+  } else if (category === 'Regression') {
+    tags.push('Regression');
+    if (target === 'Functional') tags.push('Functional');
+    if (target === 'E2E')        tags.push('E2E');
+  }
+  
+  if (isClone) tags.push('Cloned');
   return [...new Set(tags)];
 }
 
@@ -262,14 +274,14 @@ function buildTableRow(row, idx) {
   const malcodeOptions = [...new Set([...AZ.malcodes, malcodeFromPath].filter(Boolean))];
 
   // Tag pills HTML
-  const allPossibleTags = suggestTags(row.customType, row.customSprint, row.customMalcode, isClone);
+  const allPossibleTags = suggestTags(row.customCategory, row.customTarget, row.customSprint, row.customMalcode, isClone);
   const tagPillsHtml = allPossibleTags.map(t => {
     const active = selectedTags.includes(t);
     return `<span class="tag-pill ${active ? 'active' : ''}" onclick="toggleTag(${idx}, '${escHtml(t)}')" title="Click to toggle">${escHtml(t)}</span>`;
   }).join('');
 
   // Current path preview of new path
-  const previewPath = buildPath(row.customType, row.customSprint, row.customMalcode) || '— (configure POD first)';
+  const previewPath = buildPath(row.customCategory, row.customTarget, row.customSprint, row.customMalcode) || '— (configure POD first)';
 
   tr.innerHTML = `
     <td class="col-az-key">
@@ -285,10 +297,14 @@ function buildTableRow(row, idx) {
     <td class="col-az-status">${detectionBadge}</td>
     <td class="col-az-builder">
       <div class="path-builder-inline">
-        <select onchange="updateRowType(${idx}, this.value)">
-          <option value="functional"            ${row.customType==='functional'?'selected':''}>Functional</option>
-          <option value="regression-functional" ${row.customType==='regression-functional'?'selected':''}>Regression/Functional</option>
-          <option value="regression-e2e"        ${row.customType==='regression-e2e'?'selected':''}>Regression/E2E</option>
+        <select onchange="updateRowCategory(${idx}, this.value)" style="width:100px;">
+          <option value="Functional" ${row.customCategory==='Functional'?'selected':''}>Functional</option>
+          <option value="Regression" ${row.customCategory==='Regression'?'selected':''}>Regression</option>
+        </select>
+        <span class="path-sep">/</span>
+        <select onchange="updateRowTarget(${idx}, this.value)" style="width:100px;" ${row.customCategory==='Functional'?'disabled':''}>
+          <option value="Functional" ${row.customTarget==='Functional'?'selected':''}>Functional</option>
+          <option value="E2E"        ${row.customTarget==='E2E'?'selected':''}>E2E</option>
         </select>
         <span class="path-sep">/</span>
         <input type="text" value="${escHtml(row.customSprint)}" placeholder="FY26Q4-S2"
@@ -315,8 +331,22 @@ function buildTableRow(row, idx) {
 }
 
 // ─── ROW UPDATE HANDLERS ──────────────────────────────────────────────────────
-function updateRowType(idx, val) {
-  AZ.rows[idx].customType = val;
+function updateRowCategory(idx, val) {
+  AZ.rows[idx].customCategory = val;
+  const tr = document.querySelector(`tr[data-idx="${idx}"]`);
+  if (tr) {
+    const targetSel = tr.querySelector('select:nth-of-type(2)');
+    if (val === 'Functional') {
+      targetSel.disabled = true;
+    } else {
+      targetSel.disabled = false;
+    }
+  }
+  refreshRowPreview(idx);
+  refreshRowTags(idx);
+}
+function updateRowTarget(idx, val) {
+  AZ.rows[idx].customTarget = val;
   refreshRowPreview(idx);
   refreshRowTags(idx);
 }
@@ -333,14 +363,14 @@ function updateRowMalcode(idx, val) {
 
 function refreshRowPreview(idx) {
   const row     = AZ.rows[idx];
-  const preview = buildPath(row.customType, row.customSprint, row.customMalcode) || '— (sprint or MALCODE missing)';
+  const preview = buildPath(row.customCategory, row.customTarget, row.customSprint, row.customMalcode) || '— (sprint or MALCODE missing)';
   const el = document.getElementById(`preview_${idx}`);
   if (el) el.textContent = preview;
 }
 
 function refreshRowTags(idx) {
   const row = AZ.rows[idx];
-  const allTags = suggestTags(row.customType, row.customSprint, row.customMalcode, row.isClone);
+  const allTags = suggestTags(row.customCategory, row.customTarget, row.customSprint, row.customMalcode, row.isClone);
   // Keep existing selected tags that are still relevant
   row.selectedTags = row.selectedTags.filter(t => allTags.includes(t));
   // Add any new tags that result from the change
@@ -412,33 +442,52 @@ function updateAzActionBar() {
 }
 
 // ─── BULK UPDATE ──────────────────────────────────────────────────────────────
+function updateBulkTargetAccess() {
+  const cat = document.getElementById('bulkCategory').value;
+  const targetSel = document.getElementById('bulkTarget');
+  if (cat === 'Regression') {
+    targetSel.disabled = false;
+  } else {
+    targetSel.disabled = true;
+    targetSel.value = '';
+  }
+}
+
 function applyBulkUpdate() {
   if (AZ.selectedRows.size === 0) return;
-  const newType    = document.getElementById('bulkType').value;
+  const newCat     = document.getElementById('bulkCategory').value;
+  const newTarget  = document.getElementById('bulkTarget').value;
   const newSprint  = document.getElementById('bulkSprint').value.trim().toUpperCase();
   const newMalcode = document.getElementById('bulkMalcode').value;
 
-  if (!newType && !newSprint && !newMalcode) {
+  if (!newCat && !newTarget && !newSprint && !newMalcode) {
     toast('Select at least one field to apply in bulk', 'info');
     return;
   }
 
   AZ.selectedRows.forEach(idx => {
-    if (newType)    updateRowType(idx, newType);
+    if (newCat)    updateRowCategory(idx, newCat);
+    if (newTarget && newCat === 'Regression') updateRowTarget(idx, newTarget);
     if (newSprint)  updateRowSprint(idx, newSprint);
     if (newMalcode) updateRowMalcode(idx, newMalcode);
     
     // Also update the physical dropdowns in the table so they stay in sync
     const tr = document.querySelector(`tr[data-idx="${idx}"]`);
     if (tr) {
-      if (newType)    tr.querySelector('select:first-of-type').value = newType;
+      if (newCat)    tr.querySelector('select:nth-of-type(1)').value = newCat;
+      if (newCat === 'Functional') tr.querySelector('select:nth-of-type(2)').disabled = true;
+      else if (newCat === 'Regression') tr.querySelector('select:nth-of-type(2)').disabled = false;
+      
+      if (newTarget && newCat === 'Regression') tr.querySelector('select:nth-of-type(2)').value = newTarget;
       if (newSprint)  tr.querySelector('input[type="text"]').value = newSprint;
-      if (newMalcode) tr.querySelector('select:last-of-type').value = newMalcode;
+      if (newMalcode) tr.querySelector('select:nth-of-type(3)').value = newMalcode;
     }
   });
   
   // Clear the bulk inputs after apply
-  document.getElementById('bulkType').value = '';
+  document.getElementById('bulkCategory').value = '';
+  document.getElementById('bulkTarget').value = '';
+  document.getElementById('bulkTarget').disabled = true;
   document.getElementById('bulkSprint').value = '';
   document.getElementById('bulkMalcode').value = '';
   toast(`Applied updates to ${AZ.selectedRows.size} test(s)`, 'success');
@@ -469,7 +518,7 @@ async function runAzMigration() {
   // Group by target path
   const groups = {};
   rowsToMigrate.forEach(row => {
-    const target = buildPath(row.customType, row.customSprint, row.customMalcode);
+    const target = buildPath(row.customCategory, row.customTarget, row.customSprint, row.customMalcode);
     if (!groups[target]) groups[target] = [];
     groups[target].push(row);
   });
