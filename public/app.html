@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>JTMF Manager</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body class="app-body">
+
+<!-- ═══════════════ TOP NAVBAR ═══════════════ -->
+<header class="navbar">
+  <div class="navbar-left">
+    <div class="navbar-logo">
+      <svg width="22" height="22" viewBox="0 0 32 32" fill="none">
+        <rect width="32" height="32" rx="6" fill="#3B82F6"/>
+        <path d="M8 10h16M8 16h10M8 22h13" stroke="white" stroke-width="2.5" stroke-linecap="round"/>
+        <circle cx="24" cy="22" r="4" fill="#10B981"/>
+        <path d="M22 22l1.5 1.5L26 20" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      <span class="navbar-brand">JTMF Manager</span>
+    </div>
+  </div>
+
+  <div class="navbar-center">
+    <div class="navbar-pod" id="navPodName">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M3 7l9-4 9 4v10l-9 4-9-4V7z"/>
+      </svg>
+      <span id="podNameDisplay">No POD selected</span>
+    </div>
+    <div class="navbar-project" id="navProjectKey"></div>
+  </div>
+
+  <div class="navbar-right">
+    <button class="btn btn-ghost btn-sm" id="setupBtn" onclick="openSetupModal()">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/>
+      </svg>
+      POD Setup
+    </button>
+    <button class="btn btn-ghost btn-sm" id="logoutBtn" onclick="logout()">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9"/>
+      </svg>
+      Logout
+    </button>
+  </div>
+</header>
+
+<!-- ═══════════════ MAIN LAYOUT ═══════════════ -->
+<div class="app-layout">
+
+  <!-- ──── SIDEBAR ──── -->
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <span class="sidebar-title">Folder Structure</span>
+      <button class="icon-btn" title="Refresh tree" onclick="refreshTree()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/>
+          <path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/>
+        </svg>
+      </button>
+    </div>
+
+    <!-- Legend -->
+    <div class="sidebar-legend">
+      <span class="legend-item"><span class="dot dot-ok"></span> Compliant</span>
+      <span class="legend-item"><span class="dot dot-warn"></span> Partial</span>
+      <span class="legend-item"><span class="dot dot-err"></span> Non-compliant</span>
+    </div>
+
+    <div class="sidebar-tree" id="folderTree">
+      <div class="tree-empty">
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" stroke-width="1.5">
+          <path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/>
+        </svg>
+        <p>Configure your POD to<br>view folder structure</p>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ──── MAIN CONTENT ──── -->
+  <main class="main-content">
+
+    <!-- Toolbar -->
+    <div class="toolbar" id="toolbar">
+      <div class="toolbar-left">
+        <div class="breadcrumb" id="breadcrumb">
+          <span class="breadcrumb-home">Select a folder</span>
+        </div>
+      </div>
+      <div class="toolbar-right">
+        <button class="btn btn-secondary btn-sm" onclick="analyzeAll()" id="analyzeBtn" disabled>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+          </svg>
+          Analyze All
+        </button>
+        <button class="btn btn-secondary btn-sm" onclick="openSprintWizard()" id="sprintWizardBtn" disabled>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+          </svg>
+          New Sprint Folders
+        </button>
+      </div>
+    </div>
+
+    <!-- Welcome / empty state -->
+    <div class="content-empty" id="contentEmpty">
+      <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="#CBD5E1" stroke-width="1">
+        <path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/>
+      </svg>
+      <h3>No folder selected</h3>
+      <p>Set up your POD and click a folder in the sidebar to view test cases</p>
+      <button class="btn btn-primary" onclick="openSetupModal()">Set up POD</button>
+    </div>
+
+    <!-- Test table -->
+    <div class="table-wrapper" id="tableWrapper" style="display:none;">
+      <div class="table-toolbar">
+        <div class="table-toolbar-left">
+          <label class="checkbox-label">
+            <input type="checkbox" id="selectAll" onchange="toggleSelectAll(this)" />
+            <span class="checkbox-custom"></span>
+          </label>
+          <span class="table-count" id="tableCount">0 tests</span>
+          <span class="selected-badge" id="selectedBadge" style="display:none;"></span>
+        </div>
+        <div class="table-toolbar-right">
+          <div class="search-box">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" stroke-width="2">
+              <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+            </svg>
+            <input type="text" id="searchInput" placeholder="Search tests…" oninput="filterTests()" />
+          </div>
+          <select class="form-select-sm" id="filterCompliance" onchange="filterTests()">
+            <option value="">All statuses</option>
+            <option value="compliant">Compliant</option>
+            <option value="partial">Partial</option>
+            <option value="non-compliant">Non-compliant</option>
+          </select>
+          <button class="btn btn-primary btn-sm" onclick="suggestCapabilities()" id="suggestCapBtn" style="margin-left: 8px;" disabled>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
+            </svg>
+            Auto-Suggest Labels
+          </button>
+        </div>
+      </div>
+
+      <table class="test-table" id="testTable">
+        <thead>
+          <tr>
+            <th class="col-check"></th>
+            <th class="col-key">Key</th>
+            <th class="col-summary">Summary</th>
+            <th class="col-path">Current Path</th>
+            <th class="col-status">Compliance</th>
+            <th class="col-suggest-labels">Suggested Labels</th>
+            <th class="col-suggest">Suggested Path</th>
+            <th class="col-actions"></th>
+          </tr>
+        </thead>
+        <tbody id="testTableBody"></tbody>
+      </table>
+
+      <div class="table-footer" id="tableFooter">
+        <span id="paginationInfo"></span>
+        <div class="pagination" id="pagination"></div>
+      </div>
+    </div>
+
+    <!-- Loading state -->
+    <div class="loading-state" id="loadingState" style="display:none;">
+      <div class="spinner-lg"></div>
+      <p id="loadingMsg">Loading…</p>
+    </div>
+
+  </main>
+</div>
+
+<!-- ══════ FLOATING ACTION BAR ══════ -->
+<div class="action-bar" id="actionBar" style="display:none;">
+  <div class="action-bar-inner">
+    <span class="action-count" id="actionCount"></span>
+    <button class="btn btn-primary btn-sm" onclick="openMoveModal()">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <polyline points="5 9 2 12 5 15"/><polyline points="9 5 12 2 15 5"/>
+        <line x1="2" y1="12" x2="22" y2="12"/><line x1="12" y1="2" x2="12" y2="22"/>
+      </svg>
+      Move Selected
+    </button>
+    <button class="btn btn-secondary btn-sm" onclick="clearSelection()">
+      Clear
+    </button>
+    <button class="btn btn-primary btn-sm" onclick="migrateSelected()" id="migrateReportBtn" style="margin-left: 8px; background-color: #10B981; border-color: #10B981;">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+        <polyline points="7 10 12 15 17 10"></polyline>
+        <line x1="12" y1="15" x2="12" y2="3"></line>
+      </svg>
+      Migrate & Report
+    </button>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════
+     MODAL: POD SETUP
+══════════════════════════════════════════ -->
+<div class="modal-overlay" id="setupModal" style="display:none;" onclick="closeModal('setupModal')">
+  <div class="modal" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <h2 class="modal-title">POD Setup</h2>
+      <button class="modal-close" onclick="closeModal('setupModal')">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="alert alert-info" style="margin-bottom:16px;">
+        Configure your POD so the analyzer knows which folders and MALCODEs belong to you.
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">POD Root Folder Path</label>
+        <input id="setupPodPath" class="form-input" type="text"
+               placeholder="e.g. /CEPSMOM | POD - Marketing Personalization Canada" />
+        <span class="form-hint">Exact path of your POD's root folder in Xray</span>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">MALCODEs (comma separated)</label>
+        <input id="setupMalcodes" class="form-input" type="text"
+               placeholder="e.g. MALCODE1, MALCODE2, MALCODE3" />
+        <span class="form-hint">App codes that belong to this POD</span>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Active Sprint</label>
+        <input id="setupSprint" class="form-input" type="text"
+               placeholder="e.g. FY26Q4-S2" />
+        <span class="form-hint">Used as default in path suggestions (format: FY26Q4-S2)</span>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('setupModal')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveSetup()">Save & Load Tree</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════
+     MODAL: MOVE TESTS
+══════════════════════════════════════════ -->
+<div class="modal-overlay" id="moveModal" style="display:none;" onclick="closeModal('moveModal')">
+  <div class="modal modal-lg" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <h2 class="modal-title">Move Test Cases</h2>
+      <button class="modal-close" onclick="closeModal('moveModal')">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="alert alert-info" id="moveInfo"></div>
+
+      <div class="path-builder">
+        <h3 class="path-builder-title">Destination Path</h3>
+
+        <div class="path-builder-row">
+          <div class="form-group">
+            <label class="form-label">Test Type</label>
+            <select id="moveTestType" class="form-select" onchange="updatePathPreview()">
+              <option value="functional">Functional</option>
+              <option value="regression-functional">Regression › Functional</option>
+              <option value="regression-e2e">Regression › E2E</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Sprint</label>
+            <input id="moveSprint" class="form-input" type="text"
+                   placeholder="FY26Q4-S2" oninput="updatePathPreview()" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">MALCODE / App</label>
+            <select id="moveMalcode" class="form-select" onchange="updatePathPreview()">
+            </select>
+          </div>
+        </div>
+
+        <div class="path-preview" id="pathPreview">
+          <span class="path-preview-label">New path:</span>
+          <code id="pathPreviewText">/…</code>
+        </div>
+      </div>
+
+      <!-- Selected tests list -->
+      <div class="move-test-list">
+        <h3 class="path-builder-title" style="margin-top:16px;">Selected Tests (<span id="moveTestCount">0</span>)</h3>
+        <div class="test-chip-list" id="moveTestChips"></div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('moveModal')">Cancel</button>
+      <button class="btn btn-primary" id="confirmMoveBtn" onclick="confirmMove()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polyline points="20 6 9 17 4 12"/>
+        </svg>
+        Confirm Move
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════
+     MODAL: SPRINT WIZARD
+══════════════════════════════════════════ -->
+<div class="modal-overlay" id="sprintModal" style="display:none;" onclick="closeModal('sprintModal')">
+  <div class="modal" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <h2 class="modal-title">New Sprint Folders Wizard</h2>
+      <button class="modal-close" onclick="closeModal('sprintModal')">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="alert alert-info" style="margin-bottom:16px;">
+        Creates all 3 required folders for a sprint in one click.
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Sprint</label>
+          <input id="wizardSprint" class="form-input" type="text"
+                 placeholder="FY26Q4-S2" oninput="updateWizardPreview()" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">MALCODE / App</label>
+          <select id="wizardMalcode" class="form-select" onchange="updateWizardPreview()">
+          </select>
+        </div>
+      </div>
+
+      <div class="wizard-preview" id="wizardPreview">
+        <p class="wizard-preview-title">Folders to create:</p>
+        <ul id="wizardFolderList" class="wizard-folder-list"></ul>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('sprintModal')">Cancel</button>
+      <button class="btn btn-primary" onclick="runSprintWizard()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+        </svg>
+        Create Folders
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Toast container -->
+<div class="toast-container" id="toastContainer"></div>
+
+<script src="js/app.js"></script>
+</body>
+</html>

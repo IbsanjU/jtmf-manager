@@ -1,0 +1,12 @@
+{
+  "name": "jtmf-manager",
+  "version": "1.0.0",
+  "description": "JTMF Test Repository Manager — Xray Cloud (zero dependencies)",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=16"
+  }
+}
