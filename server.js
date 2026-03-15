@@ -2,8 +2,8 @@
  * JTMF Manager — Node.js server (zero external dependencies)
  * Uses only built-in: http, https, fs, path, url, crypto
  */
-
 const http   = require('http');
+require('dotenv').config();
 const https  = require('https');
 const fs     = require('fs');
 const path   = require('path');
@@ -378,8 +378,11 @@ async function router(req, res) {
     const { folderPath, limit = '50', start = '0' } = query;
     if (!folderPath) return json(res, 400, { error: 'folderPath is required' });
     try {
-      // Use Jira search with Xray DC's JQL folder extension
-      const jql     = `project = "${projectKey}" AND folder = "${folderPath}"`;
+      // Use Xray DC's specific JQL function for test repository folders
+      // Format: issue in testRepositoryFolderTests("PROJECT_KEY", "Folder/Path")
+      // Remove trailing slash except for root
+      const cleanPath = folderPath !== '/' ? folderPath.replace(/\/$/, '') : '/';
+      const jql     = `issue in testRepositoryFolderTests("${projectKey}", "${cleanPath}")`;
       const params  = new URLSearchParams({
         jql,
         fields:     'summary,status,labels,priority,assignee,components,issuetype',
