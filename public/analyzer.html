@@ -163,9 +163,9 @@
   <div class="guide-panel">
     <h4>📐 JTMF Structure Policy</h4>
     <ul>
-      <li>Functional tests → <code>/{POD}/Functional/{Sprint}/{MALCODE}/SIT</code></li>
-      <li>Regression Functional → <code>/{POD}/Regression/Functional/{Sprint}/{MALCODE}</code></li>
-      <li>Regression E2E → <code>/{POD}/Regression/E2E/{Sprint}/{MALCODE}</code></li>
+      <li>Functional tests → <code>/{POD}/Functional/{Sprint}/{MALCODE}/{env}</code></li>
+      <li>Regression Functional → <code>/{POD}/Regression/Functional/{Sprint}/{MALCODE}/{env}</code></li>
+      <li>Regression E2E → <code>/{POD}/Regression/E2E/{Sprint}/{MALCODE}/{env}</code></li>
       <li>Sprint format: <code>FY##Q#-S#</code> (e.g. <code>FY26Q4-S2</code>)</li>
       <li>Functional tests cloned to Regression are suggested to move to <code>Regression/Functional/…</code></li>
     </ul>
@@ -238,8 +238,11 @@
         <select id="folderMalcode" onchange="updateFolderPathPreview()" style="width:120px;">
           <option value="">&#8212; MALCODE &#8212;</option>
         </select>
-        <span class="path-sep" id="folderSITSep" style="display:none;">/</span>
-        <span id="folderSITSuffix" style="font-size:12px;font-family:var(--mono);color:var(--text-muted);display:none;">SIT</span>
+        <span class="path-sep">/</span>
+        <select id="folderEnv" onchange="updateFolderPathPreview()" style="width:90px;">
+          <option value="SIT">SIT</option>
+          <option value="PAT">PAT</option>
+        </select>
       </div>
       <div style="margin-top:10px;display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
         <div id="folderPathPreview" style="font-family:var(--mono);font-size:12px;color:var(--success);background:rgba(16,185,129,.07);padding:5px 10px;border-radius:5px;flex:1;min-width:200px;word-break:break-all;">

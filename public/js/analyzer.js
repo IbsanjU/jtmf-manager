@@ -45,6 +45,7 @@ function loadConfig() {
   AZ.readOnly     = saved.readOnly     || false;
   AZ.fyStartMonth = saved.fyStartMonth || 11; // default: November
   AZ.sprintWeeks  = saved.sprintWeeks  || 2;  // default: 2-week sprints
+  AZ.envs         = saved.envs         || ['SIT', 'PAT']; // default environments
   
   if (!AZ.malcodes || AZ.malcodes.length === 0) {
     AZ.malcodes = [];
@@ -276,14 +277,15 @@ function buildRow(test, currentPath, allTests) {
 }
 
 // ─── PATH BUILDER ─────────────────────────────────────────────────────────────
-function buildPath(category, target, sprint, malcode) {
+function buildPath(category, target, sprint, malcode, env) {
   if (!sprint || !malcode || !AZ.podPath) return null;
   const base = AZ.podPath.replace(/\/$/, '');
+  const envSuffix = env || (AZ.envs && AZ.envs[0]) || 'SIT';
   if (category === 'Functional') {
-    return `${base}/Functional/${sprint}/${malcode}/SIT`;
+    return `${base}/Functional/${sprint}/${malcode}/${envSuffix}`;
   } else if (category === 'Regression') {
-    const t = target || 'Functional'; // default fallback
-    return `${base}/Regression/${t}/${sprint}/${malcode}`;
+    const t = target || 'Functional';
+    return `${base}/Regression/${t}/${sprint}/${malcode}/${envSuffix}`;
   }
   return null;
 }
@@ -381,6 +383,12 @@ function populateFolderPanel() {
       AZ.malcodes.map(m => `<option value="${escHtml(m)}">${escHtml(m)}</option>`).join('');
   }
 
+  // Populate ENV dropdown
+  const envSel = document.getElementById('folderEnv');
+  if (envSel) {
+    envSel.innerHTML = AZ.envs.map((e, i) => `<option value="${escHtml(e)}"${i === 0 ? ' selected' : ''}>${escHtml(e)}</option>`).join('');
+  }
+
   // Auto-detect from first row
   if (AZ.rows.length > 0) {
     const first = AZ.rows[0];
@@ -399,18 +407,12 @@ function populateFolderPanel() {
 function updateFolderTargetAccess() {
   const cat = document.getElementById('folderCategory').value;
   const targetSel = document.getElementById('folderTarget');
-  const sitSep = document.getElementById('folderSITSep');
-  const sitSuffix = document.getElementById('folderSITSuffix');
 
   if (cat === 'Regression') {
     targetSel.disabled = false;
-    if (sitSep) sitSep.style.display = 'none';
-    if (sitSuffix) sitSuffix.style.display = 'none';
   } else {
     targetSel.disabled = true;
     targetSel.value = 'Functional';
-    if (sitSep) sitSep.style.display = '';
-    if (sitSuffix) sitSuffix.style.display = '';
   }
 }
 
@@ -419,8 +421,9 @@ function updateFolderPathPreview() {
   const target = document.getElementById('folderTarget').value;
   const sprint = document.getElementById('folderSprint').value.trim().toUpperCase();
   const malcode = document.getElementById('folderMalcode').value;
+  const env    = document.getElementById('folderEnv')?.value || '';
 
-  const path = buildPath(cat, target, sprint, malcode);
+  const path = buildPath(cat, target, sprint, malcode, env);
   const el = document.getElementById('folderPathPreview');
   if (el) el.textContent = path || '— fill in Sprint and MALCODE —';
 }

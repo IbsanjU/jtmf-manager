@@ -46,6 +46,7 @@ function loadConfig() {
   S.readOnly     = saved.readOnly     || false;
   S.fyStartMonth = saved.fyStartMonth || 11; // default: November
   S.sprintWeeks  = saved.sprintWeeks  || 2;  // default: 2-week sprints
+  S.envs         = saved.envs         || ['SIT', 'PAT']; // default environments
 }
 function saveConfig() {
   localStorage.setItem('jtmf_config', JSON.stringify({
@@ -54,7 +55,8 @@ function saveConfig() {
     activeSprint: S.activeSprint,
     readOnly:     S.readOnly,
     fyStartMonth: S.fyStartMonth,
-    sprintWeeks:  S.sprintWeeks
+    sprintWeeks:  S.sprintWeeks,
+    envs:         S.envs
   }));
 }
 function applyConfig() {
@@ -68,6 +70,7 @@ function applyConfig() {
   document.getElementById('setupReadOnly').checked = S.readOnly;
   document.getElementById('setupFyStartMonth').value = String(S.fyStartMonth || 11);
   document.getElementById('setupSprintWeeks').value  = String(S.sprintWeeks  || 2);
+  document.getElementById('setupEnvs').value          = (S.envs || ['SIT', 'PAT']).join(', ');
 
   // Read-only banner
   const banner = document.getElementById('readonlyBanner');
@@ -109,6 +112,7 @@ function openSetupModal() {
   document.getElementById('setupReadOnly').checked = S.readOnly;
   document.getElementById('setupFyStartMonth').value = String(S.fyStartMonth || 11);
   document.getElementById('setupSprintWeeks').value  = String(S.sprintWeeks  || 2);
+  document.getElementById('setupEnvs').value          = (S.envs || ['SIT', 'PAT']).join(', ');
   showModal('setupModal');
 }
 
@@ -126,6 +130,8 @@ function saveSetup() {
   S.readOnly      = readOnly;
   S.fyStartMonth  = parseInt(document.getElementById('setupFyStartMonth').value, 10) || 11;
   S.sprintWeeks   = parseInt(document.getElementById('setupSprintWeeks').value, 10)  || 2;
+  S.envs          = document.getElementById('setupEnvs').value.split(',').map(e => e.trim().toUpperCase()).filter(Boolean);
+  if (S.envs.length === 0) S.envs = ['SIT', 'PAT'];
 
   saveConfig();
   applyConfig();
