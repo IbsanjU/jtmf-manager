@@ -378,21 +378,44 @@ async function router(req, res) {
     const { folderPath, limit = '50', start = '0' } = query;
     if (!folderPath) return json(res, 400, { error: 'folderPath is required' });
     try {
-      // Use Xray DC's specific JQL function for test repository folders
-      // Format: issue in testRepositoryFolderTests("PROJECT_KEY", "Folder/Path")
-      // Remove trailing slash except for root
-      const cleanPath = folderPath !== '/' ? folderPath.replace(/\/$/, '') : '/';
-      const jql     = `issue in testRepositoryFolderTests("${projectKey}", "${cleanPath}")`;
-      const params  = new URLSearchParams({
-        jql,
-        fields:     'summary,status,labels,priority,assignee,components,issuetype',
-        maxResults: limit,
-        startAt:    start
-      });
-      const res2 = await jiraReq('GET', `/rest/api/2/search?${params}`, basicAuth);
-      if (res2.status !== 200) throw new Error(res2.data?.errorMessages?.[0] || 'Jira search failed');
+      // 1. Get folder ID from tree
+      const tree      = await xrayFolderTree(projectKey, basicAuth);
+      const folderMap = buildFolderPathMap(tree);
+      const folderId  = folderPath === '/' ? -1 : (folderMap[folderPath]?.id ?? null);
+      
+      if (folderId === null) {
+         return json(res, 404, { error: `Folder not found: ${folderPath}` });
+      }
 
-      const issues = res2.data.issues || [];
+      // 2. Fetch tests in folder from Xray DC (paginated)
+      // Note: Xray DC pagination for tests uses "limit" and "page"
+      const page = Math.floor(parseInt(start) / parseInt(limit)) + 1;
+      const xrayRes = await jiraReq('GET', 
+        `/rest/raven/1.0/api/testrepository/${projectKey}/folders/${folderId}/tests?limit=${limit}&page=${page}`, 
+        basicAuth
+      );
+      if (xrayRes.status !== 200) throw new Error(xrayRes.data?.message || 'Failed to fetch tests from Xray folder');
+
+      // The Xray API returns an array of tests. It might look like [{id: 123, key: "CALC-1"}, ...]
+      // If it doesn't return total count metadata directly, we just return the array length for now
+      const xrayTests = Array.isArray(xrayRes.data) ? xrayRes.data : (xrayRes.data.tests || []);
+      const testKeys  = xrayTests.map(t => typeof t === 'string' ? t : t.key).filter(Boolean);
+
+      if (testKeys.length === 0) {
+        return json(res, 200, { total: 0, start: parseInt(start), limit: parseInt(limit), results: [] });
+      }
+
+      // 3. Fetch comprehensive issue details from Jira (summary, labels, status, etc)
+      const jql = `key in (${testKeys.join(',')})`;
+      const params = new URLSearchParams({
+        jql,
+        fields: 'summary,status,labels,priority,assignee,components,issuetype',
+        maxResults: testKeys.length
+      });
+      const jiraRes = await jiraReq('GET', `/rest/api/2/search?${params}`, basicAuth);
+      if (jiraRes.status !== 200) throw new Error(jiraRes.data?.errorMessages?.[0] || 'Jira bulk issue fetch failed');
+
+      const issues = jiraRes.data.issues || [];
       const results = issues.map(issue => ({
         issueId: issue.key,
         jira: {
@@ -404,10 +427,14 @@ async function router(req, res) {
           components: issue.fields.components || []
         }
       }));
+
+      // Sort results to match original Xray order
+      results.sort((a, b) => testKeys.indexOf(a.issueId) - testKeys.indexOf(b.issueId));
+
       return json(res, 200, {
-        total:   res2.data.total,
-        start:   res2.data.startAt,
-        limit:   res2.data.maxResults,
+        total:   xrayTests.length, // approximation without full pagination metadata
+        start:   parseInt(start),
+        limit:   parseInt(limit),
         results
       });
     } catch (err) {
