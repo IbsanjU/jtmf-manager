@@ -252,6 +252,37 @@
         <span class="form-hint">Used as default in path suggestions (format: FY26Q4-S2)</span>
       </div>
 
+      <div class="form-group" style="display:flex;gap:16px;">
+        <div style="flex:1;">
+          <label class="form-label">FY Start Month</label>
+          <select id="setupFyStartMonth" class="form-select">
+            <option value="1">January</option>
+            <option value="2">February</option>
+            <option value="3">March</option>
+            <option value="4">April</option>
+            <option value="5">May</option>
+            <option value="6">June</option>
+            <option value="7">July</option>
+            <option value="8">August</option>
+            <option value="9">September</option>
+            <option value="10">October</option>
+            <option value="11" selected>November</option>
+            <option value="12">December</option>
+          </select>
+          <span class="form-hint">First month of Q1 in your Financial Year</span>
+        </div>
+        <div style="flex:1;">
+          <label class="form-label">Sprint Length (weeks)</label>
+          <select id="setupSprintWeeks" class="form-select">
+            <option value="1">1 week</option>
+            <option value="2" selected>2 weeks</option>
+            <option value="3">3 weeks</option>
+            <option value="4">4 weeks</option>
+          </select>
+          <span class="form-hint">How long each sprint is</span>
+        </div>
+      </div>
+
       <div class="form-group" style="margin-bottom:0;padding-top:4px;border-top:1px solid var(--border);">
         <label class="form-label" style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-bottom:0;">
           <input type="checkbox" id="setupReadOnly" style="width:16px;height:16px;cursor:pointer;" />

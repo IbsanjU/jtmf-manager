@@ -309,6 +309,57 @@ async function router(req, res) {
     }
   }
 
+  // POST /api/folders/move  { sourcePath, destPath }
+  if (method === 'POST' && pathname === '/api/folders/move') {
+    const { sourcePath, destPath } = await readBody(req);
+    if (!sourcePath || !destPath) return json(res, 400, { error: 'sourcePath and destPath are required' });
+    try {
+      const tree      = await xrayFolderTree(projectKey, basicAuth);
+      const folderMap = buildFolderPathMap(tree);
+
+      // Find source folder
+      const srcNode = folderMap[sourcePath];
+      if (!srcNode) return json(res, 404, { error: `Source folder not found: ${sourcePath}` });
+
+      // Determine destination parent path and new folder name
+      const destParts  = destPath.replace(/^\//, '').split('/');
+      const newName    = destParts.pop();
+      const destParent = destParts.length ? '/' + destParts.join('/') : '';
+      
+      // Resolve or create destination parent
+      let destParentId = -1;
+      if (destParent) {
+        let parentNode = folderMap[destParent];
+        if (!parentNode) {
+          // Create parent folder recursively (best effort)
+          const createRes = await jiraReq('POST',
+            `/rest/raven/1.0/api/testrepository/${projectKey}/folders/-1`,
+            basicAuth, { name: destParts[destParts.length - 1] }
+          );
+          if (createRes.status !== 200 && createRes.status !== 201) {
+            throw new Error(`Could not create parent folder: ${destParent}`);
+          }
+          destParentId = createRes.data?.id ?? -1;
+        } else {
+          destParentId = parentNode.id;
+        }
+      }
+
+      // Move = rename folder + set new parent via Xray DC API
+      const moveRes = await jiraReq('PUT',
+        `/rest/raven/1.0/api/testrepository/${projectKey}/folders/${srcNode.id}`,
+        basicAuth,
+        { name: newName, parentFolderId: destParentId }
+      );
+      if (moveRes.status !== 200 && moveRes.status !== 204) {
+        throw new Error(moveRes.data?.message || `Folder move failed (${moveRes.status})`);
+      }
+      return json(res, 200, { moved: true, from: sourcePath, to: destPath });
+    } catch (err) {
+      return json(res, 500, { error: err.message });
+    }
+  }
+
   // POST /api/tests/suggest-labels  { tests, currentPath }
   if (method === 'POST' && pathname === '/api/tests/suggest-labels') {
     const { tests, currentPath } = await readBody(req);

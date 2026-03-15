@@ -44,13 +44,17 @@ function loadConfig() {
   S.malcodes     = saved.malcodes     || [];
   S.activeSprint = saved.activeSprint || '';
   S.readOnly     = saved.readOnly     || false;
+  S.fyStartMonth = saved.fyStartMonth || 11; // default: November
+  S.sprintWeeks  = saved.sprintWeeks  || 2;  // default: 2-week sprints
 }
 function saveConfig() {
   localStorage.setItem('jtmf_config', JSON.stringify({
     podPath:      S.podPath,
     malcodes:     S.malcodes,
     activeSprint: S.activeSprint,
-    readOnly:     S.readOnly
+    readOnly:     S.readOnly,
+    fyStartMonth: S.fyStartMonth,
+    sprintWeeks:  S.sprintWeeks
   }));
 }
 function applyConfig() {
@@ -58,10 +62,12 @@ function applyConfig() {
   document.getElementById('podNameDisplay').textContent = short || 'No POD selected';
 
   // Pre-fill setup modal
-  document.getElementById('setupPodPath').value   = S.podPath;
-  document.getElementById('setupMalcodes').value  = S.malcodes.join(', ');
-  document.getElementById('setupSprint').value    = S.activeSprint;
+  document.getElementById('setupPodPath').value    = S.podPath;
+  document.getElementById('setupMalcodes').value   = S.malcodes.join(', ');
+  document.getElementById('setupSprint').value     = S.activeSprint;
   document.getElementById('setupReadOnly').checked = S.readOnly;
+  document.getElementById('setupFyStartMonth').value = String(S.fyStartMonth || 11);
+  document.getElementById('setupSprintWeeks').value  = String(S.sprintWeeks  || 2);
 
   // Read-only banner
   const banner = document.getElementById('readonlyBanner');
@@ -97,10 +103,12 @@ async function logout() {
 
 // ─── Setup modal ──────────────────────────────────────────────────────────────
 function openSetupModal() {
-  document.getElementById('setupPodPath').value   = S.podPath;
-  document.getElementById('setupMalcodes').value  = S.malcodes.join(', ');
-  document.getElementById('setupSprint').value    = S.activeSprint;
+  document.getElementById('setupPodPath').value    = S.podPath;
+  document.getElementById('setupMalcodes').value   = S.malcodes.join(', ');
+  document.getElementById('setupSprint').value     = S.activeSprint;
   document.getElementById('setupReadOnly').checked = S.readOnly;
+  document.getElementById('setupFyStartMonth').value = String(S.fyStartMonth || 11);
+  document.getElementById('setupSprintWeeks').value  = String(S.sprintWeeks  || 2);
   showModal('setupModal');
 }
 
@@ -112,10 +120,12 @@ function saveSetup() {
 
   if (!podPath) { toast('POD path is required', 'error'); return; }
 
-  S.podPath      = podPath.startsWith('/') ? podPath : '/' + podPath;
-  S.malcodes     = malRaw.split(',').map(m => m.trim().toUpperCase()).filter(Boolean);
-  S.activeSprint = sprint;
-  S.readOnly     = readOnly;
+  S.podPath       = podPath.startsWith('/') ? podPath : '/' + podPath;
+  S.malcodes      = malRaw.split(',').map(m => m.trim().toUpperCase()).filter(Boolean);
+  S.activeSprint  = sprint;
+  S.readOnly      = readOnly;
+  S.fyStartMonth  = parseInt(document.getElementById('setupFyStartMonth').value, 10) || 11;
+  S.sprintWeeks   = parseInt(document.getElementById('setupSprintWeeks').value, 10)  || 2;
 
   saveConfig();
   applyConfig();

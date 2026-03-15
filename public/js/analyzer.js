@@ -13,9 +13,12 @@ const AZ = {
   readOnly:     false,
 
   // Results
-  tests:        [],      // raw tests from Xray
-  rows:         [],      // enriched row objects { test, compliance, isClone, selectedTags, path }
-  selectedRows: new Set(), // indices of selected rows
+  tests:        [],
+  rows:         [],
+  selectedRows: new Set(),
+  
+  // API cache (path -> { ts, rows, tests, folder }), TTL = 5 min
+  cache: {},
 };
 
 // ─── Init ─────────────────────────────────────────────────────────────────────
@@ -40,6 +43,12 @@ function loadConfig() {
   AZ.malcodes     = saved.malcodes     || [];
   AZ.activeSprint = saved.activeSprint || '';
   AZ.readOnly     = saved.readOnly     || false;
+  AZ.fyStartMonth = saved.fyStartMonth || 11; // default: November
+  AZ.sprintWeeks  = saved.sprintWeeks  || 2;  // default: 2-week sprints
+  
+  if (!AZ.malcodes || AZ.malcodes.length === 0) {
+    AZ.malcodes = [];
+  }
 }
 
 function applyReadOnly() {
@@ -64,16 +73,28 @@ async function logout() {
 }
 
 // ─── ANALYSIS ─────────────────────────────────────────────────────────────────
-async function runAnalysis() {
+const AZ_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+async function runAnalysis(forceRefresh = false) {
   const inputPath = document.getElementById('analyzerPathInput').value.trim();
   if (!inputPath) { toast('Please enter a folder path', 'error'); return; }
+
+  // Check cache (skip if forceRefresh=true)
+  const cached = AZ.cache[inputPath];
+  if (!forceRefresh && cached && (Date.now() - cached.ts) < AZ_CACHE_TTL) {
+    AZ.rows = cached.rows;
+    AZ.tests = cached.tests;
+    AZ.selectedRows.clear();
+    renderTable(inputPath, AZ.tests.length);
+    toast('Showing cached results — click Refresh to reload from Xray', 'info');
+    return;
+  }
 
   document.getElementById('resultsCard').style.display      = 'none';
   document.getElementById('analyzerLoading').style.display  = 'flex';
   document.getElementById('analyzerLoadingMsg').textContent = `Analyzing ${inputPath}…`;
 
   try {
-    // 1. Fetch folder info + tests
     const [folderData, testsData] = await Promise.all([
       api(`/api/folders?path=${encodeURIComponent(inputPath)}`),
       api(`/api/tests?${new URLSearchParams({ folderPath: inputPath, limit: 200, start: 0 })}`)
@@ -89,9 +110,11 @@ async function runAnalysis() {
       return;
     }
 
-    // 2. Build enriched rows with smart suggestions
     AZ.rows = tests.map(test => buildRow(test, inputPath, tests));
     AZ.selectedRows.clear();
+    
+    // Cache the results
+    AZ.cache[inputPath] = { ts: Date.now(), rows: AZ.rows, tests, folder };
 
     renderTable(inputPath, tests.length);
     document.getElementById('analyzerLoading').style.display = 'none';
@@ -109,9 +132,10 @@ function buildRow(test, currentPath, allTests) {
   const pathParts = currentPath.split('/').filter(Boolean);
 
   // Detect clone: if this test's summary appears in a Functional folder
-  // while the current path is NOT Functional, or vice versa
-  const isInFunctional   = pathParts.includes('Functional')   && !pathParts.includes('Regression');
-  const isInRegression   = pathParts.includes('Regression');
+  // Normalize path for case-insensitive matching
+  const pathLower = currentPath.toLowerCase();
+  const isInFunctional = pathLower.includes('functional') && !pathLower.includes('regression');
+  const isInRegression = pathLower.includes('regression');
 
   // Clone = same folder contains both functional and regression clones
   // (In practice, we flag the current test if the path is Functional and marked as clone candidate)
@@ -130,30 +154,52 @@ function buildRow(test, currentPath, allTests) {
   }
   sprintFromPath = sprintFromPath || AZ.activeSprint || '';
   
-  // Smarter MALCODE detection:
-  // 1. Try to find right from the folder path (even as a substring, like "MATA" in "MATA_Archive")
+  // Smarter MALCODE detection (in priority order):
+  // 1. Substring match within any folder path part (e.g. "MATA" in "MATA_Archive")
   let malcodeFromPath = '';
   for (const p of pathParts) {
     const pUpper = p.toUpperCase();
     const match = AZ.malcodes.find(m => pUpper.includes(m.toUpperCase()));
     if (match) { malcodeFromPath = match; break; }
   }
-  
-  // 2. If not in path, try checking the Jira labels (substring allowed)
+
+  // 2. Check Jira labels (substring match)
   if (!malcodeFromPath && test.jira?.labels) {
-     for (const l of test.jira.labels) {
-       const lUpper = l.toUpperCase();
-       const match = AZ.malcodes.find(m => lUpper.includes(m.toUpperCase()));
-       if (match) { malcodeFromPath = match; break; }
-     }
+    for (const l of test.jira.labels) {
+      const lUpper = l.toUpperCase();
+      const found = AZ.malcodes.find(m => lUpper.includes(m.toUpperCase()));
+      if (found) { malcodeFromPath = found; break; }
+    }
   }
-  // 3. If not in labels, try checking if it's mentioned in the Jira Summary
+
+  // 3. Check Jira components (name field)
+  if (!malcodeFromPath && test.jira?.components) {
+    for (const c of test.jira.components) {
+      const cUpper = (c.name || '').toUpperCase();
+      const found = AZ.malcodes.find(m => cUpper.includes(m.toUpperCase()));
+      if (found) { malcodeFromPath = found; break; }
+    }
+  }
+
+  // 4. Check any custom field values (string type only)
+  if (!malcodeFromPath && test.jira?.customfields) {
+    for (const val of Object.values(test.jira.customfields)) {
+      if (typeof val === 'string') {
+        const vUpper = val.toUpperCase();
+        const found = AZ.malcodes.find(m => vUpper.includes(m.toUpperCase()));
+        if (found) { malcodeFromPath = found; break; }
+      }
+    }
+  }
+
+  // 5. Check Jira summary (substring)
   if (!malcodeFromPath && summary) {
-     malcodeFromPath = AZ.malcodes.find(m => summary.includes(m.toLowerCase()));
+    const sumUpper = summary.toUpperCase();
+    malcodeFromPath = AZ.malcodes.find(m => sumUpper.includes(m.toUpperCase())) || '';
   }
-  // 4. Default to first configured MALCODE (or empty)
-  malcodeFromPath = malcodeFromPath || AZ.malcodes[0] || '';
-  // Ensure uppercase for consistency
+
+  // Default: first configured MALCODE (empty if none configured)
+  malcodeFromPath = malcodeFromPath || (AZ.malcodes.length > 0 ? AZ.malcodes[0] : '');
   malcodeFromPath = malcodeFromPath.toUpperCase();
 
   // Suggest test category and target
@@ -493,6 +539,54 @@ function applyBulkUpdate() {
   toast(`Applied updates to ${AZ.selectedRows.size} test(s)`, 'success');
 }
 
+// ─── MOVE ENTIRE FOLDER ─────────────────────────────────────────────────────────────
+function openMoveFolderModal() {
+  if (AZ.readOnly) {
+    toast('Read-only mode is active — folder move is disabled', 'warning');
+    return;
+  }
+  const currentPath = document.getElementById('analyzerPathInput').value.trim();
+  if (!currentPath) {
+    toast('Please analyze a folder first', 'error');
+    return;
+  }
+  document.getElementById('moveFolderSrcLabel').textContent = currentPath;
+  document.getElementById('moveFolderDest').value = '';
+  document.getElementById('moveFolderModal').style.display = 'flex';
+}
+
+async function confirmMoveFolder() {
+  const sourcePath = document.getElementById('analyzerPathInput').value.trim();
+  const destPath   = document.getElementById('moveFolderDest').value.trim();
+  
+  if (!destPath) {
+    toast('Destination path is required', 'error');
+    return;
+  }
+  if (destPath === sourcePath) {
+    toast('Destination is the same as the source', 'error');
+    return;
+  }
+  
+  try {
+    await api('/api/folders/move', {
+      method: 'POST',
+      body: { sourcePath, destPath }
+    });
+    toast(`Folder moved to ${destPath}`, 'success');
+    closeModal('moveFolderModal');
+    // Clear cache for this path since it's been moved
+    delete AZ.cache[sourcePath];
+  } catch (err) {
+    toast(`Move failed: ${err.message}`, 'error');
+  }
+}
+
+function closeModal(id) {
+  const el = document.getElementById(id);
+  if (el) el.style.display = 'none';
+}
+
 // ─── MIGRATION ────────────────────────────────────────────────────────────────
 async function runAzMigration() {
   if (AZ.readOnly) { toast('Read-only mode is ON — no changes allowed', 'error'); return; }
@@ -602,44 +696,58 @@ function escHtml(str) {
   return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
-// ─── DATE CALCULATION ─────────────────────────────────────────────────────────
+// ─── DATE → SPRINT CALCULATION ─────────────────────────────────────────────────────
 function getSprintFromDate(dateString) {
   if (!dateString) return null;
   const d = new Date(dateString);
   if (isNaN(d.getTime())) return null;
 
+  const fyStartMonth = AZ.fyStartMonth || 11; // 1-indexed month (November = 11)
+  const sprintWeeks  = AZ.sprintWeeks  || 2;
+  const sprintDays   = sprintWeeks * 7;
+
+  // Determine FY year. FY starts at fyStartMonth.
+  // If we're AT or AFTER the FY start month in the calendar year, FY year = calendar year.
+  // If we're BEFORE, FY year = calendar year (FY covers previous November to next October).
+  // Convention: FY26 = Nov 2025 – Oct 2026.
   const year  = d.getFullYear();
-  const month = d.getMonth() + 1; // 1-12
-  const day   = d.getDate();
+  const month = d.getMonth() + 1; // 1-indexed
 
-  // Assuming FY starts April 1st (Adjust if different for your org)
-  // If month is Apr-Dec, FY is current year + 1. If Jan-Mar, FY is current year.
-  let fyYear = year;
-  if (month >= 4) {
-    fyYear = year + 1;
+  let fyYear;
+  if (fyStartMonth > 1) {
+    // e.g. November start: Nov=FY+1 year, so FY26 = Nov 2025 - Oct 2026
+    fyYear = (month >= fyStartMonth) ? year + 1 : year;
+  } else {
+    fyYear = year;
   }
-  const fyStr = String(fyYear).slice(-2); // e.g. "24" from 2024
+  const fyStr = String(fyYear).slice(-2); // e.g. "26"
 
-  // Quarters based on Apr 1 start:
-  // Q1: Apr, May, Jun
-  // Q2: Jul, Aug, Sep
-  // Q3: Oct, Nov, Dec
-  // Q4: Jan, Feb, Mar
-  let q = 1;
-  if (month >= 7 && month <= 9) q = 2;
-  else if (month >= 10 && month <= 12) q = 3;
-  else if (month >= 1 && month <= 3) q = 4;
-
-  // Approximate Sprint (assuming 2-week sprints, ~6 per quarter)
-  // This is a rough heuristic based on the day of the quarter.
-  let monthInQuarter = 1; // 1, 2, or 3
-  if (month === 5 || month === 8 || month === 11 || month === 2) monthInQuarter = 2;
-  if (month === 6 || month === 9 || month === 12 || month === 3) monthInQuarter = 3;
+  // Calculate which quarter we're in.
+  // Quarter boundaries are always 3-month blocks from FY start.
+  // E.g. FY Nov start: Q1=Nov,Dec,Jan Q2=Feb,Mar,Apr Q3=May,Jun,Jul Q4=Aug,Sep,Oct
   
-  // ~2 sprints per month
-  let sprintNum = (monthInQuarter - 1) * 2;
-  if (day <= 15) sprintNum += 1;
-  else sprintNum += 2;
+  // Normalize month into offset from FY start (0-indexed)
+  let monthOffset = (month - fyStartMonth + 12) % 12; // 0=first month of Q1
+  const quarter = Math.floor(monthOffset / 3) + 1; // 1-4
 
-  return `FY${fyStr}Q${q}-S${sprintNum}`;
+  // Sprint number within the quarter:
+  // Find the first Thursday of the quarter's first month
+  const firstDayOfQ = new Date(d.getFullYear(), (fyStartMonth - 1 + Math.floor(monthOffset / 3) * 3) % 12, 1);
+  // Find the first Thursday (day 4 in JS, 0=Sun)
+  let dayOfWeek = firstDayOfQ.getDay();
+  let daysUntilThursday = (4 - dayOfWeek + 7) % 7;
+  const firstSprintStart = new Date(firstDayOfQ);
+  firstSprintStart.setDate(1 + daysUntilThursday);
+
+  // How many days since first sprint started?
+  const daysDiff = Math.floor((d - firstSprintStart) / (1000 * 60 * 60 * 24));
+  
+  let sprintNum;
+  if (daysDiff < 0) {
+    sprintNum = 1; // Before the first sprint of the quarter
+  } else {
+    sprintNum = Math.floor(daysDiff / sprintDays) + 1;
+  }
+
+  return `FY${fyStr}Q${quarter}-S${sprintNum}`;
 }
