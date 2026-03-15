@@ -19,8 +19,7 @@ document.getElementById('loginForm').addEventListener('submit', async (e) => {
   const payload = {
     username:     document.getElementById('username').value.trim(),
     password:     document.getElementById('password').value.trim(),
-    projectKey:   document.getElementById('projectKey').value.trim(),
-    jiraUrl:      document.getElementById('jiraUrl').value.trim()
+    projectKey:   document.getElementById('projectKey').value.trim()
   };
 
   if (!payload.username || !payload.password || !payload.projectKey) {

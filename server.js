@@ -10,9 +10,10 @@ const path   = require('path');
 const url    = require('url');
 const crypto = require('crypto');
 
-const PORT       = process.env.PORT || 3000;
-const PUBLIC_DIR = path.join(__dirname, 'public');
-const XRAY_BASE  = 'xray.cloud.getxray.app';
+const PORT         = process.env.PORT || 3000;
+const PUBLIC_DIR   = path.join(__dirname, 'public');
+const XRAY_BASE    = 'xray.cloud.getxray.app';
+const JIRA_BASE_URL = (process.env.JIRA_BASE_URL || '').replace(/\/$/, ''); // Common Jira URL for all PODs
 
 // ─── In-memory session store ────────────────────────────────────────────────
 const sessions = new Map(); // token → { xrayToken, projectKey, jiraUrl, createdAt }
@@ -85,10 +86,13 @@ function serveStatic(res, filePath) {
   });
 }
 
-// ─── HTTPS request helper (replaces axios) ──────────────────────────────────
+// ─── HTTPS request helper ───────────────────────────────────────────────────
+// rejectUnauthorized:false allows self-signed / internal-CA certs (TD network)
+const SSL_AGENT = new https.Agent({ rejectUnauthorized: false });
+
 function httpsRequest(options, body = null) {
   return new Promise((resolve, reject) => {
-    const req = https.request(options, (res) => {
+    const req = https.request({ agent: SSL_AGENT, ...options }, (res) => {
       let data = '';
       res.on('data', chunk => data += chunk);
       res.on('end', () => {
@@ -377,10 +381,12 @@ async function router(req, res) {
     if (!testIssueIds?.length || !labels?.length) {
       return json(res, 400, { error: 'testIssueIds and labels are required.' });
     }
-    if (!jiraUrl) {
-      return json(res, 400, { error: 'Jira URL not set. Please log out and log in with the Jira URL.' });
+    // Prefer server-level env JIRA_BASE_URL, fall back to per-session jiraUrl
+    const effectiveJiraUrl = JIRA_BASE_URL || jiraUrl;
+    if (!effectiveJiraUrl) {
+      return json(res, 400, { error: 'Jira URL not configured. Set JIRA_BASE_URL env variable or provide it at login.' });
     }
-    const jiraHost = jiraUrl.replace('https://', '').replace('http://', '');
+    const jiraHost = effectiveJiraUrl.replace('https://', '').replace('http://', '');
     const results  = [];
 
     for (const issueId of testIssueIds) {
