@@ -229,11 +229,30 @@
     </div>
 
     <!-- Action bar -->
-    <div class="az-action-bar">
-      <div class="az-action-bar-left">
-        <span id="azSelectedCount">0 selected</span>
+    <div class="az-action-bar" style="flex-wrap: wrap; gap: 16px;">
+      <div class="az-action-bar-left" style="min-width: 120px;">
+        <span id="azSelectedCount" style="font-weight:600; color:var(--text);">0 selected</span>
       </div>
-      <div class="az-action-bar-right">
+      
+      <!-- Bulk update bar -->
+      <div id="bulkUpdateBar" style="display:none; flex: 1; align-items: center; gap: 10px; background: var(--bg); padding: 6px 14px; border-radius: var(--radius-sm); border: 1px solid var(--border);">
+        <span style="font-size:12px; font-weight:600; color:var(--text-muted);">Apply to Selected:</span>
+        <div class="path-builder-inline">
+          <select id="bulkType">
+            <option value="">— Type —</option>
+            <option value="functional">Functional</option>
+            <option value="regression-functional">Regression/Functional</option>
+            <option value="regression-e2e">Regression/E2E</option>
+          </select>
+          <input type="text" id="bulkSprint" placeholder="Sprint (e.g. FY26Q4-S2)" style="width:140px;" />
+          <select id="bulkMalcode">
+            <option value="">— MALCODE —</option>
+          </select>
+          <button class="btn btn-secondary btn-sm" onclick="applyBulkUpdate()" style="margin-left:8px; height:30px; font-size:12px; padding:0 12px;">Apply</button>
+        </div>
+      </div>
+
+      <div class="az-action-bar-right" style="margin-left: auto;">
         <button class="btn btn-secondary btn-sm" onclick="clearAzSelection()">Clear</button>
         <button class="btn btn-primary btn-sm" id="azMigrateBtn" onclick="runAzMigration()" disabled>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">

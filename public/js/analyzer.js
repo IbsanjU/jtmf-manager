@@ -123,15 +123,29 @@ function buildRow(test, currentPath, allTests) {
     isClone = matchCount > 1;
   }
 
-  // Derive sprint from path
-  const sprintFromPath  = pathParts.find(p => SPRINT_RE.test(p)) || AZ.activeSprint || '';
+  // Derive sprint from path (or fallback to creation date, then active sprint)
+  let sprintFromPath = pathParts.find(p => SPRINT_RE.test(p));
+  if (!sprintFromPath && test.jira?.created) {
+    sprintFromPath = getSprintFromDate(test.jira.created);
+  }
+  sprintFromPath = sprintFromPath || AZ.activeSprint || '';
   
   // Smarter MALCODE detection:
-  // 1. Try to find right from the folder path
-  let malcodeFromPath = pathParts.find(p => AZ.malcodes.includes(p.toUpperCase()));
-  // 2. If not in path, try checking the Jira labels
+  // 1. Try to find right from the folder path (even as a substring, like "MATA" in "MATA_Archive")
+  let malcodeFromPath = '';
+  for (const p of pathParts) {
+    const pUpper = p.toUpperCase();
+    const match = AZ.malcodes.find(m => pUpper.includes(m.toUpperCase()));
+    if (match) { malcodeFromPath = match; break; }
+  }
+  
+  // 2. If not in path, try checking the Jira labels (substring allowed)
   if (!malcodeFromPath && test.jira?.labels) {
-     malcodeFromPath = test.jira.labels.find(l => AZ.malcodes.includes(l.toUpperCase()));
+     for (const l of test.jira.labels) {
+       const lUpper = l.toUpperCase();
+       const match = AZ.malcodes.find(m => lUpper.includes(m.toUpperCase()));
+       if (match) { malcodeFromPath = match; break; }
+     }
   }
   // 3. If not in labels, try checking if it's mentioned in the Jira Summary
   if (!malcodeFromPath && summary) {
@@ -212,6 +226,13 @@ function renderTable(folderPath, total) {
   });
 
   updateAzActionBar();
+
+  // Populate bulk MALCODE dropdown
+  const bulkMalcode = document.getElementById('bulkMalcode');
+  if (bulkMalcode) {
+    bulkMalcode.innerHTML = '<option value="">— MALCODE —</option>' + 
+      AZ.malcodes.map(m => `<option value="${escHtml(m)}">${escHtml(m)}</option>`).join('');
+  }
 }
 
 function buildTableRow(row, idx) {
@@ -383,6 +404,44 @@ function updateAzActionBar() {
   const btn = document.getElementById('azMigrateBtn');
   document.getElementById('azSelectedCount').textContent = `${n} test${n !== 1 ? 's' : ''} selected`;
   btn.disabled = n === 0 || AZ.readOnly;
+  
+  const bulkBar = document.getElementById('bulkUpdateBar');
+  if (bulkBar) {
+    bulkBar.style.display = n > 0 ? 'flex' : 'none';
+  }
+}
+
+// ─── BULK UPDATE ──────────────────────────────────────────────────────────────
+function applyBulkUpdate() {
+  if (AZ.selectedRows.size === 0) return;
+  const newType    = document.getElementById('bulkType').value;
+  const newSprint  = document.getElementById('bulkSprint').value.trim().toUpperCase();
+  const newMalcode = document.getElementById('bulkMalcode').value;
+
+  if (!newType && !newSprint && !newMalcode) {
+    toast('Select at least one field to apply in bulk', 'info');
+    return;
+  }
+
+  AZ.selectedRows.forEach(idx => {
+    if (newType)    updateRowType(idx, newType);
+    if (newSprint)  updateRowSprint(idx, newSprint);
+    if (newMalcode) updateRowMalcode(idx, newMalcode);
+    
+    // Also update the physical dropdowns in the table so they stay in sync
+    const tr = document.querySelector(`tr[data-idx="${idx}"]`);
+    if (tr) {
+      if (newType)    tr.querySelector('select:first-of-type').value = newType;
+      if (newSprint)  tr.querySelector('input[type="text"]').value = newSprint;
+      if (newMalcode) tr.querySelector('select:last-of-type').value = newMalcode;
+    }
+  });
+  
+  // Clear the bulk inputs after apply
+  document.getElementById('bulkType').value = '';
+  document.getElementById('bulkSprint').value = '';
+  document.getElementById('bulkMalcode').value = '';
+  toast(`Applied updates to ${AZ.selectedRows.size} test(s)`, 'success');
 }
 
 // ─── MIGRATION ────────────────────────────────────────────────────────────────
@@ -492,4 +551,46 @@ function toast(msg, type = 'info') {
 
 function escHtml(str) {
   return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ─── DATE CALCULATION ─────────────────────────────────────────────────────────
+function getSprintFromDate(dateString) {
+  if (!dateString) return null;
+  const d = new Date(dateString);
+  if (isNaN(d.getTime())) return null;
+
+  const year  = d.getFullYear();
+  const month = d.getMonth() + 1; // 1-12
+  const day   = d.getDate();
+
+  // Assuming FY starts April 1st (Adjust if different for your org)
+  // If month is Apr-Dec, FY is current year + 1. If Jan-Mar, FY is current year.
+  let fyYear = year;
+  if (month >= 4) {
+    fyYear = year + 1;
+  }
+  const fyStr = String(fyYear).slice(-2); // e.g. "24" from 2024
+
+  // Quarters based on Apr 1 start:
+  // Q1: Apr, May, Jun
+  // Q2: Jul, Aug, Sep
+  // Q3: Oct, Nov, Dec
+  // Q4: Jan, Feb, Mar
+  let q = 1;
+  if (month >= 7 && month <= 9) q = 2;
+  else if (month >= 10 && month <= 12) q = 3;
+  else if (month >= 1 && month <= 3) q = 4;
+
+  // Approximate Sprint (assuming 2-week sprints, ~6 per quarter)
+  // This is a rough heuristic based on the day of the quarter.
+  let monthInQuarter = 1; // 1, 2, or 3
+  if (month === 5 || month === 8 || month === 11 || month === 2) monthInQuarter = 2;
+  if (month === 6 || month === 9 || month === 12 || month === 3) monthInQuarter = 3;
+  
+  // ~2 sprints per month
+  let sprintNum = (monthInQuarter - 1) * 2;
+  if (day <= 15) sprintNum += 1;
+  else sprintNum += 2;
+
+  return `FY${fyStr}Q${q}-S${sprintNum}`;
 }

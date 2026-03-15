@@ -409,7 +409,7 @@ async function router(req, res) {
       const jql = `key in (${testKeys.join(',')})`;
       const params = new URLSearchParams({
         jql,
-        fields: 'summary,status,labels,priority,assignee,components,issuetype',
+        fields: 'summary,status,labels,priority,assignee,components,issuetype,created',
         maxResults: testKeys.length
       });
       const jiraRes = await jiraReq('GET', `/rest/api/2/search?${params}`, basicAuth);
@@ -424,7 +424,8 @@ async function router(req, res) {
           status:     issue.fields.status,
           priority:   issue.fields.priority,
           assignee:   issue.fields.assignee,
-          components: issue.fields.components || []
+          components: issue.fields.components || [],
+          created:    issue.fields.created
         }
       }));
 
