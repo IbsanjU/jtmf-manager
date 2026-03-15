@@ -72,12 +72,52 @@ async function logout() {
   window.location.href = '/';
 }
 
+// ─── URL / PATH PARSER ────────────────────────────────────────────────────────
+function parseInputPath(raw) {
+  if (!raw) return '';
+  raw = raw.trim();
+
+  // If it looks like a URL, try to extract the folder path
+  if (raw.startsWith('http://') || raw.startsWith('https://')) {
+    try {
+      const url = new URL(raw);
+
+      // Pattern 1: Hash-based route e.g. #/PROJ/folder/path/here
+      if (url.hash) {
+        const hashPath = decodeURIComponent(url.hash.replace(/^#\/?/, ''));
+        if (hashPath) return '/' + hashPath.replace(/^\//, '');
+      }
+
+      // Pattern 2: Query param "path" or "folder" or "folderId"
+      const qPath = url.searchParams.get('path') || url.searchParams.get('folder');
+      if (qPath) return qPath.startsWith('/') ? qPath : '/' + qPath;
+
+      // Pattern 3: /testrepository/{project}/folders path in URL
+      const repoMatch = url.pathname.match(/\/testrepository\/[^/]+\/(.+)/);
+      if (repoMatch) return '/' + decodeURIComponent(repoMatch[1]);
+
+      // Pattern 4: Just take the pathname if nothing else matched
+      if (url.pathname && url.pathname !== '/') {
+        return decodeURIComponent(url.pathname);
+      }
+    } catch {
+      // Not a valid URL — treat as plain path
+    }
+  }
+
+  // Plain path — ensure it starts with /
+  return raw.startsWith('/') ? raw : '/' + raw;
+}
+
 // ─── ANALYSIS ─────────────────────────────────────────────────────────────────
 const AZ_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
 async function runAnalysis(forceRefresh = false) {
-  const inputPath = document.getElementById('analyzerPathInput').value.trim();
-  if (!inputPath) { toast('Please enter a folder path', 'error'); return; }
+  let inputPath = parseInputPath(document.getElementById('analyzerPathInput').value);
+  if (!inputPath) { toast('Please enter a folder path or URL', 'error'); return; }
+
+  // Update the input box with the parsed path so the user sees what was extracted
+  document.getElementById('analyzerPathInput').value = inputPath;
 
   // Check cache (skip if forceRefresh=true)
   const cached = AZ.cache[inputPath];
