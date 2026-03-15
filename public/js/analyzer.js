@@ -35,6 +35,14 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   loadConfig();
   applyReadOnly();
+
+  // Check for auto-analysis from URL params
+  const urlParams = new URLSearchParams(window.location.search);
+  const autoPath = urlParams.get('path');
+  if (autoPath) {
+    document.getElementById('analyzerPathInput').value = autoPath;
+    runAnalysis();
+  }
 });
 
 function loadConfig() {

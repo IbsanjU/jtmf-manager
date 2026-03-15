@@ -335,17 +335,18 @@ function suggestPath(test, currentFolderPath) {
 
   if (!sprintFromPath || !malcode || !S.podPath) return null;
 
-  return buildPath(testType, sprintFromPath, malcode);
+  return buildPath(testType, sprintFromPath, malcode, S.envs?.[0]);
 }
 
-function buildPath(testType, sprint, malcode) {
+function buildPath(testType, sprint, malcode, env) {
   if (!sprint || !malcode || !S.podPath) return null;
   const base = S.podPath.replace(/\/$/, '');
+  const envSuffix = env || (S.envs && S.envs[0]) || 'SIT';
   switch (testType) {
-    case 'functional':           return `${base}/Functional/${sprint}/${malcode}/SIT`;
-    case 'regression-functional': return `${base}/Regression/Functional/${sprint}/${malcode}`;
-    case 'regression-e2e':       return `${base}/Regression/E2E/${sprint}/${malcode}`;
-    default: return null;
+    case 'functional':           return `${base}/Functional/${sprint}/${malcode}/${envSuffix}`;
+    case 'regression-functional': return `${base}/Regression/Functional/${sprint}/${malcode}/${envSuffix}`;
+    case 'regression-e2e':       return `${base}/Regression/E2E/${sprint}/${malcode}/${envSuffix}`;
+    default:                      return null;
   }
 }
 
@@ -377,6 +378,7 @@ async function loadTests(folder, pageOverride = 0) {
     S.totalTests = data.total || 0;
 
     renderTable();
+    populateFolderPanel(folder);
 
     document.getElementById('loadingState').style.display   = 'none';
     document.getElementById('tableWrapper').style.display   = 'flex';
@@ -472,7 +474,14 @@ function buildTestRow(test) {
       ${labels.length ? `<div style="margin-top:4px;display:flex;flex-wrap:wrap;gap:3px;">${labels.map(l => `<span class="badge badge-neutral" style="font-size:10px;">${escHtml(l)}</span>`).join('')}</div>` : ''}
     </td>
     <td class="col-path">
-      <span class="test-path" title="${escHtml(curPath)}">${escHtml(curPath)}</span>
+      <div style="display:flex;align-items:center;gap:6px;">
+        <span class="test-path" title="${escHtml(curPath)}">${escHtml(curPath)}</span>
+        <a href="/analyzer.html?path=${encodeURIComponent(curPath)}" class="row-btn" style="padding:2px 4px;height:auto;" title="Open in Analyzer">
+          <svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+            <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+          </svg>
+        </a>
+      </div>
     </td>
     <td class="col-status">
       ${complianceBadge(compliance)}
@@ -900,7 +909,14 @@ function renderBreadcrumb(fullPath) {
   bc.innerHTML = parts.map((p, i) => {
     if (i === parts.length - 1) return `<span class="breadcrumb-item">${escHtml(p)}</span>`;
     return `<span class="breadcrumb-item" style="color:var(--text-muted)">${escHtml(p)}</span><span class="breadcrumb-sep">/</span>`;
-  }).join('');
+  }).join('') + `
+    <a href="/analyzer.html?path=${encodeURIComponent(fullPath)}" class="btn btn-ghost btn-sm" style="margin-left:12px;height:24px;padding:0 8px;font-size:11px;display:inline-flex;align-items:center;gap:4px;" title="Open this folder in Folder Analyzer">
+      <svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+        <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+      </svg>
+      Analyze Folder
+    </a>
+  `;
 }
 
 // ─── DROPDOWNS ────────────────────────────────────────────────────────────────
@@ -931,6 +947,127 @@ function toast(msg, type = 'info') {
 // ─── UTILS ────────────────────────────────────────────────────────────────────
 function escHtml(str) {
   return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ─── FOLDER PANEL (ANALYZER FEATURES) ──────────────────────────────────────────
+function populateFolderPanel(folder) {
+  if (!folder) return;
+  
+  // Set POD root label
+  document.getElementById('folderPodRoot').textContent = S.podPath || '/POD';
+  
+  // Populate MALCODE dropdown
+  const malSel = document.getElementById('folderMalcode');
+  if (malSel) {
+    malSel.innerHTML = `<option value="">— MALCODE —</option>` + 
+      S.malcodes.map(m => `<option value="${escHtml(m)}">${escHtml(m)}</option>`).join('');
+  }
+
+  // Populate ENV dropdown
+  const envSel = document.getElementById('folderEnv');
+  if (envSel) {
+    envSel.innerHTML = (S.envs || ['SIT', 'PAT']).map(e => `<option value="${escHtml(e)}">${escHtml(e)}</option>`).join('');
+  }
+
+  // Detect context from path
+  const parts = folder.path.split('/').filter(Boolean);
+  const podParts = (S.podPath || '').split('/').filter(Boolean);
+  const rel = parts.slice(podParts.length);
+
+  let category = 'Functional';
+  let target = 'Functional';
+  if (rel[0] === 'Regression') {
+    category = 'Regression';
+    target = rel[1] === 'E2E' ? 'E2E' : 'Functional';
+  }
+
+  const sprint = rel.find(p => SPRINT_RE.test(p)) || S.activeSprint || '';
+  const malcode = rel.find(p => S.malcodes.includes(p.toUpperCase())) || S.malcodes[0] || '';
+
+  // Set values
+  document.getElementById('folderCategory').value = category;
+  document.getElementById('folderTarget').value = target;
+  document.getElementById('folderSprint').value = sprint;
+  if (malSel) malSel.value = malcode;
+
+  updateFolderTargetAccess();
+  updateFolderPathPreview();
+}
+
+function updateFolderTargetAccess() {
+  const cat = document.getElementById('folderCategory').value;
+  const targetSel = document.getElementById('folderTarget');
+  if (cat === 'Regression') {
+    targetSel.disabled = false;
+  } else {
+    targetSel.disabled = true;
+    targetSel.value = 'Functional';
+  }
+}
+
+function updateFolderPathPreview() {
+  const cat     = document.getElementById('folderCategory').value;
+  const target  = document.getElementById('folderTarget').value;
+  const sprint  = document.getElementById('folderSprint').value.trim().toUpperCase();
+  const malcode = document.getElementById('folderMalcode').value;
+  const env     = document.getElementById('folderEnv').value;
+
+  const typeMap = {
+    'Functional': 'functional',
+    'RegressionFunctional': 'regression-functional',
+    'RegressionE2E': 'regression-e2e'
+  };
+  const key = cat === 'Regression' ? `Regression${target}` : 'Functional';
+  const type = typeMap[key];
+
+  const preview = buildPath(type, sprint, malcode, env);
+  const previewEl = document.getElementById('folderPathPreview');
+  if (preview) {
+    previewEl.textContent = preview;
+    previewEl.style.color = 'var(--success)';
+  } else {
+    previewEl.textContent = '— configure dropdowns above —';
+    previewEl.style.color = 'var(--text-muted)';
+  }
+}
+
+function openMoveFolderFromPanel() {
+  const path = document.getElementById('folderPathPreview').textContent;
+  if (!path || path.includes('—')) {
+    toast('Please configure a valid destination path first', 'warn');
+    return;
+  }
+
+  if (!S.currentFolder) return;
+  
+  // Reuse the move folder logic (we'll implement a folder move confirmation)
+  if (S.readOnly) { toast('Read-only mode is ON — no changes will be made', 'error'); return; }
+
+  const count = S.totalTests;
+  if (!confirm(`Warning: This will move the ENTIRE folder "${S.currentFolder.name}" (${count} tests) to:\n\n${path}\n\nAre you sure?`)) {
+    return;
+  }
+
+  const btn = document.getElementById('folderMoveBtn');
+  const oldHtml = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = `<div class="spinner" style="border-top-color:white;width:12px;height:12px;"></div> Moving…`;
+
+  api('/api/folders/move', {
+    method: 'POST',
+    body: { sourcePath: S.currentFolder.path, targetPath: path }
+  }).then(() => {
+    toast(`✓ Folder moved successfully to ${path}`, 'success');
+    loadTree();
+    // After move, the current folder might be gone/moved, so we clear view
+    document.getElementById('tableWrapper').style.display = 'none';
+    document.getElementById('contentEmpty').style.display = 'flex';
+  }).catch(err => {
+    toast(err.message, 'error');
+  }).finally(() => {
+    btn.disabled = false;
+    btn.innerHTML = oldHtml;
+  });
 }
 
 // Add scroll container to table

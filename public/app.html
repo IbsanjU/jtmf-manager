@@ -130,6 +130,50 @@
 
     <!-- Test table -->
     <div class="table-wrapper" id="tableWrapper" style="display:none;">
+      
+      <!-- Folder-level path suggestion with dropdowns -->
+      <div id="folderSuggestionPanel" style="background:var(--surface);border:1.5px solid var(--border);border-radius:var(--radius);padding:14px 20px;margin:0 0 12px 0;">
+        <div style="font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--text-muted);margin-bottom:12px;">
+          📂 Suggested Folder Destination
+        </div>
+        <div class="path-builder-inline" style="flex-wrap:wrap;gap:8px;align-items:center;">
+          <span style="font-family:var(--mono);font-size:12px;color:var(--text-muted);" id="folderPodRoot">/{POD}</span>
+          <span class="path-sep">/</span>
+          <select id="folderCategory" onchange="updateFolderTargetAccess();updateFolderPathPreview();" style="width:130px;">
+            <option value="Functional">Functional</option>
+            <option value="Regression">Regression</option>
+          </select>
+          <span class="path-sep">/</span>
+          <select id="folderTarget" disabled style="width:120px;" onchange="updateFolderPathPreview()">
+            <option value="Functional">Functional</option>
+            <option value="E2E">E2E</option>
+          </select>
+          <span class="path-sep">/</span>
+          <input type="text" id="folderSprint" placeholder="FY26Q4-S2" oninput="updateFolderPathPreview()" style="width:130px;" />
+          <span class="path-sep">/</span>
+          <select id="folderMalcode" onchange="updateFolderPathPreview()" style="width:120px;">
+            <option value="">— MALCODE —</option>
+          </select>
+          <span class="path-sep">/</span>
+          <select id="folderEnv" onchange="updateFolderPathPreview()" style="width:90px;">
+            <option value="SIT">SIT</option>
+            <option value="PAT">PAT</option>
+          </select>
+        </div>
+        <div style="margin-top:10px;display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
+          <div id="folderPathPreview" style="font-family:var(--mono);font-size:12px;color:var(--success);background:rgba(16,185,129,.07);padding:5px 10px;border-radius:5px;flex:1;min-width:200px;word-break:break-all;">
+            — configure dropdowns above —
+          </div>
+          <button class="btn btn-primary btn-sm" onclick="openMoveFolderFromPanel()" style="height:32px;min-width:150px;" id="folderMoveBtn">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+              <line x1="12" y1="12" x2="19" y2="12"/><polyline points="16 9 19 12 16 15"/>
+            </svg>
+            Move Folder Here
+          </button>
+        </div>
+      </div>
+
       <div class="table-toolbar">
         <div class="table-toolbar-left">
           <label class="checkbox-label">
