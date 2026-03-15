@@ -196,6 +196,7 @@
     <p id="analyzerLoadingMsg">Loading…</p>
   </div>
 
+
   <!-- Results -->
   <div id="resultsCard" class="results-card" style="display:none;">
     <div class="results-header">
@@ -203,7 +204,7 @@
         <div class="results-title" id="resultsTitle">Analysis Results</div>
         <div class="results-sub" id="resultsSub"></div>
       </div>
-      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+      <div style="display:flex;gap:8px;align-items:center;">
         <button class="btn btn-ghost btn-sm" onclick="runAnalysis(true)" title="Force refresh from Xray">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/>
@@ -214,63 +215,80 @@
       </div>
     </div>
 
+    <!-- Folder-level path suggestion with dropdowns -->
+    <div id="folderSuggestionPanel" style="background:var(--surface);border:1.5px solid var(--border);border-radius:var(--radius);padding:16px 20px;margin:0 16px 12px 16px;">
+      <div style="font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--text-muted);margin-bottom:12px;">
+        &#128194; Suggested Folder Destination
+      </div>
+      <div class="path-builder-inline" style="flex-wrap:wrap;gap:8px;align-items:center;">
+        <span style="font-family:var(--mono);font-size:12px;color:var(--text-muted);" id="folderPodRoot">/{POD}</span>
+        <span class="path-sep">/</span>
+        <select id="folderCategory" onchange="updateFolderTargetAccess();updateFolderPathPreview();" style="width:130px;">
+          <option value="Functional">Functional</option>
+          <option value="Regression">Regression</option>
+        </select>
+        <span class="path-sep">/</span>
+        <select id="folderTarget" disabled style="width:120px;" onchange="updateFolderPathPreview()">
+          <option value="Functional">Functional</option>
+          <option value="E2E">E2E</option>
+        </select>
+        <span class="path-sep">/</span>
+        <input type="text" id="folderSprint" placeholder="FY26Q4-S2" oninput="updateFolderPathPreview()" style="width:130px;" />
+        <span class="path-sep">/</span>
+        <select id="folderMalcode" onchange="updateFolderPathPreview()" style="width:120px;">
+          <option value="">&#8212; MALCODE &#8212;</option>
+        </select>
+        <span class="path-sep" id="folderSITSep" style="display:none;">/</span>
+        <span id="folderSITSuffix" style="font-size:12px;font-family:var(--mono);color:var(--text-muted);display:none;">SIT</span>
+      </div>
+      <div style="margin-top:10px;display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
+        <div id="folderPathPreview" style="font-family:var(--mono);font-size:12px;color:var(--success);background:rgba(16,185,129,.07);padding:5px 10px;border-radius:5px;flex:1;min-width:200px;word-break:break-all;">
+          &#8212; configure dropdowns above &#8212;
+        </div>
+        <button class="btn btn-primary btn-sm" onclick="openMoveFolderFromPanel()" style="height:32px;min-width:150px;">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+            <line x1="12" y1="12" x2="19" y2="12"/><polyline points="16 9 19 12 16 15"/>
+          </svg>
+          Move Folder Here
+        </button>
+      </div>
+    </div>
+
+    <!-- Optional: toggle to select individual test cases for override moves -->
+    <div style="display:flex;align-items:center;gap:14px;padding:8px 20px;border-bottom:1px solid var(--border);">
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;color:var(--text-muted);user-select:none;">
+        <input type="checkbox" id="toggleCaseSelect" onchange="setCaseSelectionMode(this.checked)" style="width:15px;height:15px;cursor:pointer;" />
+        <span>Select individual test cases for override moves</span>
+      </label>
+      <div id="caseSelectionControls" style="display:none;align-items:center;gap:8px;">
+        <label style="display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer;color:var(--text-muted);">
+          <input type="checkbox" id="selectAllAz" onchange="toggleSelectAllAz(this)" /> All
+        </label>
+        <span id="azSelectedCount" style="font-size:12px;color:var(--text-muted);">0 selected</span>
+        <button class="btn btn-primary btn-sm" id="azMigrateBtn" onclick="runAzMigration()" disabled
+                style="height:26px;font-size:12px;padding:0 10px;">Move Selected</button>
+        <button class="btn btn-ghost btn-sm" onclick="clearAzSelection()" style="height:26px;font-size:12px;">Clear</button>
+      </div>
+    </div>
+
+    <!-- Clean read-only test case table -->
     <div style="overflow-x:auto;flex:1;">
       <table class="az-table">
         <thead>
           <tr>
+            <th id="thCheckbox" style="display:none;width:36px;"></th>
             <th class="col-az-key">Key</th>
             <th class="col-az-sum">Summary</th>
-            <th class="col-az-cur">Current Path</th>
             <th class="col-az-status">Detection</th>
-            <th class="col-az-builder">New Path Builder</th>
-            <th class="col-az-tags">Suggested Tags</th>
-            <th class="col-az-apply"><input type="checkbox" id="selectAllAzHook" style="display:none" /></th>
+            <th class="col-az-tags">Labels</th>
+            <th style="min-width:130px;">Sprint (detected)</th>
           </tr>
         </thead>
         <tbody id="analyzerTableBody"></tbody>
       </table>
     </div>
 
-    <!-- Action bar -->
-    <div class="az-action-bar" style="flex-wrap: wrap; gap: 16px;">
-      <div class="az-action-bar-left" style="min-width: 120px;">
-        <span id="azSelectedCount" style="font-weight:600; color:var(--text);">0 selected</span>
-      </div>
-      
-      <!-- Bulk update bar -->
-      <div id="bulkUpdateBar" style="display:none; flex: 1; align-items: center; gap: 10px; background: var(--bg); padding: 6px 14px; border-radius: var(--radius-sm); border: 1px solid var(--border);">
-        <span style="font-size:12px; font-weight:600; color:var(--text-muted);">Apply to Selected:</span>
-        <div class="path-builder-inline">
-          <select id="bulkCategory" onchange="updateBulkTargetAccess()">
-            <option value="">— Category —</option>
-            <option value="Functional">Functional</option>
-            <option value="Regression">Regression</option>
-          </select>
-          <span class="path-sep">/</span>
-          <select id="bulkTarget" disabled>
-            <option value="">— Target —</option>
-            <option value="Functional">Functional</option>
-            <option value="E2E">E2E</option>
-          </select>
-          <span class="path-sep">/</span>
-          <input type="text" id="bulkSprint" placeholder="Sprint (e.g. FY26Q4-S2)" style="width:140px;" />
-          <select id="bulkMalcode">
-            <option value="">— MALCODE —</option>
-          </select>
-          <button class="btn btn-secondary btn-sm" onclick="applyBulkUpdate()" style="margin-left:8px; height:30px; font-size:12px; padding:0 12px;">Apply</button>
-        </div>
-      </div>
-
-      <div class="az-action-bar-right" style="margin-left: auto;">
-        <button class="btn btn-secondary btn-sm" onclick="clearAzSelection()">Clear</button>
-        <button class="btn btn-primary btn-sm" id="azMigrateBtn" onclick="runAzMigration()" disabled>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
-          </svg>
-          Migrate Selected & Report
-        </button>
-      </div>
-    </div>
   </div>
 
 </div>

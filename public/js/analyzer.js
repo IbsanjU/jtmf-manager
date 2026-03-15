@@ -275,7 +275,7 @@ function renderTable(folderPath, total) {
   tbody.innerHTML = '';
 
   if (AZ.rows.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;padding:32px;color:var(--text-muted);">No tests found in this folder</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;padding:32px;color:var(--text-muted);">No tests found in this folder</td></tr>`;
     return;
   }
 
@@ -283,22 +283,17 @@ function renderTable(folderPath, total) {
     tbody.appendChild(buildTableRow(row, idx));
   });
 
-  updateAzActionBar();
-
-  // Populate bulk MALCODE dropdown
-  const bulkMalcode = document.getElementById('bulkMalcode');
-  if (bulkMalcode) {
-    bulkMalcode.innerHTML = '<option value="">— MALCODE —</option>' + 
-      AZ.malcodes.map(m => `<option value="${escHtml(m)}">${escHtml(m)}</option>`).join('');
-  }
+  // Populate the folder-level suggestion panel dropdowns from the first row's detection
+  populateFolderPanel();
 }
 
 function buildTableRow(row, idx) {
-  const { test, currentPath, isClone, suggestedType, sprintFromPath, malcodeFromPath, selected, selectedTags } = row;
+  const { test, isClone, sprintFromPath, malcodeFromPath } = row;
   const issueId = test.issueId || '';
   const summary = test.jira?.summary || '—';
   const labels  = test.jira?.labels  || [];
   const isSelected = AZ.selectedRows.has(idx);
+  const caseSelectOn = document.getElementById('toggleCaseSelect')?.checked;
 
   const tr = document.createElement('tr');
   tr.dataset.idx = idx;
@@ -316,131 +311,115 @@ function buildTableRow(row, idx) {
     detectionBadge = `<span class="badge badge-neutral">Other</span>`;
   }
 
-  // Build MALCODE options from config + current
-  const malcodeOptions = [...new Set([...AZ.malcodes, malcodeFromPath].filter(Boolean))];
-
-  // Tag pills HTML
-  const allPossibleTags = suggestTags(row.customCategory, row.customTarget, row.customSprint, row.customMalcode, isClone);
-  const tagPillsHtml = allPossibleTags.map(t => {
-    const active = selectedTags.includes(t);
-    return `<span class="tag-pill ${active ? 'active' : ''}" onclick="toggleTag(${idx}, '${escHtml(t)}')" title="Click to toggle">${escHtml(t)}</span>`;
-  }).join('');
-
-  // Current path preview of new path
-  const previewPath = buildPath(row.customCategory, row.customTarget, row.customSprint, row.customMalcode) || '— (configure POD first)';
+  // Labels pills
+  const labelPills = labels.map(l => `<span class="badge badge-neutral" style="font-size:10px;">${escHtml(l)}</span>`).join('');
 
   tr.innerHTML = `
-    <td class="col-az-key">
-      <span class="test-key">${escHtml(issueId)}</span>
-    </td>
-    <td class="col-az-sum">
-      <div class="test-summary">${escHtml(summary)}</div>
-      ${labels.length ? `<div style="margin-top:3px;display:flex;flex-wrap:wrap;gap:3px;">${labels.map(l => `<span class="badge badge-neutral" style="font-size:10px;">${escHtml(l)}</span>`).join('')}</div>` : ''}
-    </td>
-    <td class="col-az-cur">
-      <span class="test-path" title="${escHtml(currentPath)}">${escHtml(currentPath)}</span>
-    </td>
+    ${caseSelectOn ? `<td style="width:36px;text-align:center;">
+      <input type="checkbox" onchange="toggleSelectAz(${idx}, this)" ${isSelected ? 'checked' : ''} />
+    </td>` : ''}
+    <td class="col-az-key"><span class="test-key">${escHtml(issueId)}</span></td>
+    <td class="col-az-sum"><div class="test-summary">${escHtml(summary)}</div></td>
     <td class="col-az-status">${detectionBadge}</td>
-    <td class="col-az-builder">
-      <div class="path-builder-inline">
-        <select onchange="updateRowCategory(${idx}, this.value)" style="width:100px;">
-          <option value="Functional" ${row.customCategory==='Functional'?'selected':''}>Functional</option>
-          <option value="Regression" ${row.customCategory==='Regression'?'selected':''}>Regression</option>
-        </select>
-        <span class="path-sep">/</span>
-        <select onchange="updateRowTarget(${idx}, this.value)" style="width:100px;" ${row.customCategory==='Functional'?'disabled':''}>
-          <option value="Functional" ${row.customTarget==='Functional'?'selected':''}>Functional</option>
-          <option value="E2E"        ${row.customTarget==='E2E'?'selected':''}>E2E</option>
-        </select>
-        <span class="path-sep">/</span>
-        <input type="text" value="${escHtml(row.customSprint)}" placeholder="FY26Q4-S2"
-               oninput="updateRowSprint(${idx}, this.value)" style="width:105px;" />
-        <span class="path-sep">/</span>
-        <select onchange="updateRowMalcode(${idx}, this.value)">
-          ${malcodeOptions.map(m => `<option value="${escHtml(m)}" ${row.customMalcode===m?'selected':''}>${escHtml(m)}</option>`).join('') || `<option value="">—</option>`}
-        </select>
-      </div>
-      <div class="path-preview-inline" id="preview_${idx}">${escHtml(previewPath)}</div>
-    </td>
-    <td class="col-az-tags">
-      <div class="tag-pills" id="tags_${idx}">${tagPillsHtml}</div>
-    </td>
-    <td class="col-az-apply" style="text-align:center;">
-      <label class="checkbox-label" style="justify-content:center;">
-        <input type="checkbox" onchange="toggleSelectAz(${idx}, this)" ${isSelected ? 'checked' : ''} />
-        <span class="checkbox-custom"></span>
-      </label>
-    </td>
+    <td class="col-az-tags"><div style="display:flex;flex-wrap:wrap;gap:3px;">${labelPills || '<span style="color:var(--text-muted);font-size:11px;">—</span>'}</div></td>
+    <td style="font-family:var(--mono);font-size:12px;color:var(--text-muted);">${escHtml(sprintFromPath || '—')}</td>
   `;
 
   return tr;
 }
 
-// ─── ROW UPDATE HANDLERS ──────────────────────────────────────────────────────
-function updateRowCategory(idx, val) {
-  AZ.rows[idx].customCategory = val;
-  const tr = document.querySelector(`tr[data-idx="${idx}"]`);
-  if (tr) {
-    const targetSel = tr.querySelector('select:nth-of-type(2)');
-    if (val === 'Functional') {
-      targetSel.disabled = true;
-    } else {
-      targetSel.disabled = false;
-    }
+// ─── FOLDER PANEL ─────────────────────────────────────────────────────────────
+function populateFolderPanel() {
+  // Set pod root label
+  const podRoot = document.getElementById('folderPodRoot');
+  if (podRoot) podRoot.textContent = AZ.podPath || '/{POD}';
+
+  // Populate MALCODE dropdown
+  const malSel = document.getElementById('folderMalcode');
+  if (malSel) {
+    malSel.innerHTML = '<option value="">\u2014 MALCODE \u2014</option>' +
+      AZ.malcodes.map(m => `<option value="${escHtml(m)}">${escHtml(m)}</option>`).join('');
   }
-  refreshRowPreview(idx);
-  refreshRowTags(idx);
-}
-function updateRowTarget(idx, val) {
-  AZ.rows[idx].customTarget = val;
-  refreshRowPreview(idx);
-  refreshRowTags(idx);
-}
-function updateRowSprint(idx, val) {
-  AZ.rows[idx].customSprint = val.trim().toUpperCase();
-  refreshRowPreview(idx);
-  refreshRowTags(idx);
-}
-function updateRowMalcode(idx, val) {
-  AZ.rows[idx].customMalcode = val;
-  refreshRowPreview(idx);
-  refreshRowTags(idx);
+
+  // Auto-detect from first row
+  if (AZ.rows.length > 0) {
+    const first = AZ.rows[0];
+    document.getElementById('folderCategory').value = first.customCategory || 'Functional';
+    updateFolderTargetAccess();
+    if (first.customCategory === 'Regression') {
+      document.getElementById('folderTarget').value = first.customTarget || 'Functional';
+    }
+    document.getElementById('folderSprint').value = first.customSprint || '';
+    if (malSel && first.customMalcode) malSel.value = first.customMalcode;
+  }
+
+  updateFolderPathPreview();
 }
 
-function refreshRowPreview(idx) {
-  const row     = AZ.rows[idx];
-  const preview = buildPath(row.customCategory, row.customTarget, row.customSprint, row.customMalcode) || '— (sprint or MALCODE missing)';
-  const el = document.getElementById(`preview_${idx}`);
-  if (el) el.textContent = preview;
+function updateFolderTargetAccess() {
+  const cat = document.getElementById('folderCategory').value;
+  const targetSel = document.getElementById('folderTarget');
+  const sitSep = document.getElementById('folderSITSep');
+  const sitSuffix = document.getElementById('folderSITSuffix');
+
+  if (cat === 'Regression') {
+    targetSel.disabled = false;
+    if (sitSep) sitSep.style.display = 'none';
+    if (sitSuffix) sitSuffix.style.display = 'none';
+  } else {
+    targetSel.disabled = true;
+    targetSel.value = 'Functional';
+    if (sitSep) sitSep.style.display = '';
+    if (sitSuffix) sitSuffix.style.display = '';
+  }
 }
 
-function refreshRowTags(idx) {
-  const row = AZ.rows[idx];
-  const allTags = suggestTags(row.customCategory, row.customTarget, row.customSprint, row.customMalcode, row.isClone);
-  // Keep existing selected tags that are still relevant
-  row.selectedTags = row.selectedTags.filter(t => allTags.includes(t));
-  // Add any new tags that result from the change
-  allTags.forEach(t => { if (!row.selectedTags.includes(t)) row.selectedTags.push(t); });
+function updateFolderPathPreview() {
+  const cat    = document.getElementById('folderCategory').value;
+  const target = document.getElementById('folderTarget').value;
+  const sprint = document.getElementById('folderSprint').value.trim().toUpperCase();
+  const malcode = document.getElementById('folderMalcode').value;
 
-  const el = document.getElementById(`tags_${idx}`);
-  if (!el) return;
-  el.innerHTML = allTags.map(t => {
-    const active = row.selectedTags.includes(t);
-    return `<span class="tag-pill ${active ? 'active' : ''}" onclick="toggleTag(${idx}, '${escHtml(t)}')">${escHtml(t)}</span>`;
-  }).join('');
+  const path = buildPath(cat, target, sprint, malcode);
+  const el = document.getElementById('folderPathPreview');
+  if (el) el.textContent = path || '— fill in Sprint and MALCODE —';
 }
 
-function toggleTag(idx, tag) {
-  const row = AZ.rows[idx];
-  const i   = row.selectedTags.indexOf(tag);
-  if (i >= 0) row.selectedTags.splice(i, 1);
-  else         row.selectedTags.push(tag);
+function openMoveFolderFromPanel() {
+  if (AZ.readOnly) {
+    toast('Read-only mode is active — folder move is disabled', 'warning');
+    return;
+  }
+  const sourcePath = document.getElementById('analyzerPathInput').value.trim();
+  if (!sourcePath) {
+    toast('Analyze a folder first', 'error');
+    return;
+  }
+  const destPath = document.getElementById('folderPathPreview').textContent;
+  if (!destPath || destPath.startsWith('—')) {
+    toast('Please configure the destination dropdowns first', 'error');
+    return;
+  }
 
-  const el = document.getElementById(`tags_${idx}`);
-  if (!el) return;
-  el.querySelectorAll('.tag-pill').forEach(pill => {
-    if (pill.textContent.trim() === tag) pill.classList.toggle('active', i < 0);
-  });
+  document.getElementById('moveFolderSrcLabel').textContent = sourcePath;
+  document.getElementById('moveFolderDest').value = destPath;
+  document.getElementById('moveFolderModal').style.display = 'flex';
+}
+
+// ─── CASE SELECTION TOGGLE ────────────────────────────────────────────────────
+function setCaseSelectionMode(on) {
+  const controls = document.getElementById('caseSelectionControls');
+  const thChk    = document.getElementById('thCheckbox');
+  if (controls) controls.style.display = on ? 'flex' : 'none';
+  if (thChk)    thChk.style.display    = on ? '' : 'none';
+
+  // Re-render the table to add/remove checkboxes
+  const inputPath = document.getElementById('analyzerPathInput').value.trim();
+  if (AZ.rows.length > 0) {
+    const tbody = document.getElementById('analyzerTableBody');
+    tbody.innerHTML = '';
+    AZ.rows.forEach((row, idx) => tbody.appendChild(buildTableRow(row, idx)));
+  }
 }
 
 // ─── SELECTION ────────────────────────────────────────────────────────────────
@@ -471,73 +450,20 @@ function clearAzSelection() {
     cb.checked = false;
     cb.closest('tr')?.classList.remove('selected');
   });
-  document.getElementById('selectAllAz').checked = false;
+  const selectAllCb = document.getElementById('selectAllAz');
+  if (selectAllCb) selectAllCb.checked = false;
   updateAzActionBar();
 }
 
 function updateAzActionBar() {
   const n   = AZ.selectedRows.size;
   const btn = document.getElementById('azMigrateBtn');
-  document.getElementById('azSelectedCount').textContent = `${n} test${n !== 1 ? 's' : ''} selected`;
-  btn.disabled = n === 0 || AZ.readOnly;
-  
-  const bulkBar = document.getElementById('bulkUpdateBar');
-  if (bulkBar) {
-    bulkBar.style.display = n > 0 ? 'flex' : 'none';
-  }
+  const countEl = document.getElementById('azSelectedCount');
+  if (countEl) countEl.textContent = `${n} selected`;
+  if (btn)     btn.disabled = n === 0 || AZ.readOnly;
 }
 
-// ─── BULK UPDATE ──────────────────────────────────────────────────────────────
-function updateBulkTargetAccess() {
-  const cat = document.getElementById('bulkCategory').value;
-  const targetSel = document.getElementById('bulkTarget');
-  if (cat === 'Regression') {
-    targetSel.disabled = false;
-  } else {
-    targetSel.disabled = true;
-    targetSel.value = '';
-  }
-}
 
-function applyBulkUpdate() {
-  if (AZ.selectedRows.size === 0) return;
-  const newCat     = document.getElementById('bulkCategory').value;
-  const newTarget  = document.getElementById('bulkTarget').value;
-  const newSprint  = document.getElementById('bulkSprint').value.trim().toUpperCase();
-  const newMalcode = document.getElementById('bulkMalcode').value;
-
-  if (!newCat && !newTarget && !newSprint && !newMalcode) {
-    toast('Select at least one field to apply in bulk', 'info');
-    return;
-  }
-
-  AZ.selectedRows.forEach(idx => {
-    if (newCat)    updateRowCategory(idx, newCat);
-    if (newTarget && newCat === 'Regression') updateRowTarget(idx, newTarget);
-    if (newSprint)  updateRowSprint(idx, newSprint);
-    if (newMalcode) updateRowMalcode(idx, newMalcode);
-    
-    // Also update the physical dropdowns in the table so they stay in sync
-    const tr = document.querySelector(`tr[data-idx="${idx}"]`);
-    if (tr) {
-      if (newCat)    tr.querySelector('select:nth-of-type(1)').value = newCat;
-      if (newCat === 'Functional') tr.querySelector('select:nth-of-type(2)').disabled = true;
-      else if (newCat === 'Regression') tr.querySelector('select:nth-of-type(2)').disabled = false;
-      
-      if (newTarget && newCat === 'Regression') tr.querySelector('select:nth-of-type(2)').value = newTarget;
-      if (newSprint)  tr.querySelector('input[type="text"]').value = newSprint;
-      if (newMalcode) tr.querySelector('select:nth-of-type(3)').value = newMalcode;
-    }
-  });
-  
-  // Clear the bulk inputs after apply
-  document.getElementById('bulkCategory').value = '';
-  document.getElementById('bulkTarget').value = '';
-  document.getElementById('bulkTarget').disabled = true;
-  document.getElementById('bulkSprint').value = '';
-  document.getElementById('bulkMalcode').value = '';
-  toast(`Applied updates to ${AZ.selectedRows.size} test(s)`, 'success');
-}
 
 // ─── MOVE ENTIRE FOLDER ─────────────────────────────────────────────────────────────
 function openMoveFolderModal() {
