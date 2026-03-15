@@ -7,6 +7,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     const data = await res.json();
     if (data.authenticated) window.location.href = '/app';
   } catch (_) {}
+
+  // Pre-fill saved project key
+  const savedKey = localStorage.getItem('jtmf_projectKey');
+  if (savedKey) document.getElementById('projectKey').value = savedKey;
 });
 
 document.getElementById('loginForm').addEventListener('submit', async (e) => {
@@ -41,6 +45,7 @@ document.getElementById('loginForm').addEventListener('submit', async (e) => {
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Login failed');
+    localStorage.setItem('jtmf_projectKey', payload.projectKey);
     window.location.href = '/app';
   } catch (err) {
     showAlert(err.message);

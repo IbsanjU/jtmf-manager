@@ -196,12 +196,18 @@ function buildRow(test, currentPath, allTests) {
   sprintFromPath = sprintFromPath || AZ.activeSprint || '';
   
   // Smarter MALCODE detection (in priority order):
-  // 1. Substring match within any folder path part (e.g. "MATA" in "MATA_Archive")
+  // 1. Path parts — handles compound names like MATA_Archive, CHOMM_October-2025
+  //    Split each folder name on _ and - to check segments individually
   let malcodeFromPath = '';
   for (const p of pathParts) {
     const pUpper = p.toUpperCase();
-    const match = AZ.malcodes.find(m => pUpper.includes(m.toUpperCase()));
-    if (match) { malcodeFromPath = match; break; }
+    // First try exact segment match (strongest: "MATA" segment in "MATA_Archive")
+    const segments = pUpper.split(/[_\-]/);
+    const exactMatch = AZ.malcodes.find(m => segments.includes(m.toUpperCase()));
+    if (exactMatch) { malcodeFromPath = exactMatch; break; }
+    // Fallback: substring match (e.g. path part that starts with MALCODE)
+    const subMatch = AZ.malcodes.find(m => pUpper.startsWith(m.toUpperCase()) || pUpper.includes(m.toUpperCase()));
+    if (subMatch) { malcodeFromPath = subMatch; break; }
   }
 
   // 2. Check Jira labels (substring match)
