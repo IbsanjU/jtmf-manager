@@ -125,8 +125,22 @@ function buildRow(test, currentPath, allTests) {
 
   // Derive sprint from path
   const sprintFromPath  = pathParts.find(p => SPRINT_RE.test(p)) || AZ.activeSprint || '';
-  // Derive malcode from path
-  const malcodeFromPath = pathParts.find(p => AZ.malcodes.includes(p.toUpperCase())) || AZ.malcodes[0] || '';
+  
+  // Smarter MALCODE detection:
+  // 1. Try to find right from the folder path
+  let malcodeFromPath = pathParts.find(p => AZ.malcodes.includes(p.toUpperCase()));
+  // 2. If not in path, try checking the Jira labels
+  if (!malcodeFromPath && test.jira?.labels) {
+     malcodeFromPath = test.jira.labels.find(l => AZ.malcodes.includes(l.toUpperCase()));
+  }
+  // 3. If not in labels, try checking if it's mentioned in the Jira Summary
+  if (!malcodeFromPath && summary) {
+     malcodeFromPath = AZ.malcodes.find(m => summary.includes(m.toLowerCase()));
+  }
+  // 4. Default to first configured MALCODE (or empty)
+  malcodeFromPath = malcodeFromPath || AZ.malcodes[0] || '';
+  // Ensure uppercase for consistency
+  malcodeFromPath = malcodeFromPath.toUpperCase();
 
   // Suggest test type
   let suggestedType = 'functional';
