@@ -12,8 +12,7 @@ const crypto = require('crypto');
 
 const PORT         = process.env.PORT || 3000;
 const PUBLIC_DIR   = path.join(__dirname, 'public');
-const XRAY_BASE    = 'xray.cloud.getxray.app';
-const JIRA_BASE_URL = (process.env.JIRA_BASE_URL || '').replace(/\/$/, ''); // Common Jira URL for all PODs
+const JIRA_BASE_URL = (process.env.JIRA_BASE_URL || '').replace(/\/$/, '');
 
 // ─── In-memory session store ────────────────────────────────────────────────
 const sessions = new Map(); // token → { xrayToken, projectKey, jiraUrl, createdAt }
@@ -110,36 +109,81 @@ function httpsRequest(options, body = null) {
   });
 }
 
-async function xrayAuth(clientId, clientSecret) {
-  const body = JSON.stringify({ client_id: clientId, client_secret: clientSecret });
-  const res = await httpsRequest({
-    hostname: XRAY_BASE,
-    path: '/api/v2/authenticate',
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) }
-  }, body);
-  if (res.status !== 200) throw new Error(res.data?.error || res.data || 'Auth failed');
-  // Response is a quoted JWT string
-  return typeof res.data === 'string' ? res.data.replace(/^"|"$/g, '') : res.data;
+// ─── Jira / Xray DC auth & request helpers ──────────────────────────────────
+
+function jiraHost() {
+  return (JIRA_BASE_URL || '').replace(/^https?:\/\//, '').replace(/\/$/, '');
 }
 
-async function xrayGql(token, query, variables = {}) {
-  const body = JSON.stringify({ query, variables });
-  const res = await httpsRequest({
-    hostname: XRAY_BASE,
-    path: '/api/v2/graphql',
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${token}`,
-      'Content-Type': 'application/json',
-      'Content-Length': Buffer.byteLength(body)
-    }
-  }, body);
+// Make a Basic-Auth request to Jira/Xray DC
+async function jiraReq(method, path, basicAuth, body = null) {
+  const host = jiraHost();
+  if (!host) throw new Error('JIRA_BASE_URL is not configured on the server.');
+  const bodyStr  = body ? JSON.stringify(body) : null;
+  const headers  = {
+    'Authorization':  `Basic ${basicAuth}`,
+    'Content-Type':   'application/json',
+    'Accept':         'application/json',
+    ...(bodyStr ? { 'Content-Length': Buffer.byteLength(bodyStr) } : {})
+  };
+  const res = await httpsRequest({ hostname: host, path, method, headers }, bodyStr);
+  if (res.status === 401) throw new Error('Jira session expired. Please log in again.');
+  return res;
+}
 
-  if (res.status === 401) throw new Error('Xray token expired. Please log in again.');
-  if (res.data?.errors?.length) throw new Error(res.data.errors[0].message);
-  if (!res.data?.data) throw new Error('Empty response from Xray GraphQL');
-  return res.data.data;
+// Validate credentials against Jira; returns Base64 Basic-auth string
+async function jiraAuth(username, password) {
+  const basicAuth = Buffer.from(`${username}:${password}`).toString('base64');
+  const res = await jiraReq('GET', '/rest/api/2/myself', basicAuth);
+  if (res.status !== 200 || (!res.data?.name && !res.data?.emailAddress)) {
+    throw new Error('Invalid Jira credentials. Please check your username and password.');
+  }
+  return basicAuth;
+}
+
+// ─── Xray DC folder tree helpers ─────────────────────────────────────────────
+
+// Fetch the full folder tree from Xray DC
+async function xrayFolderTree(projectKey, basicAuth) {
+  const res = await jiraReq('GET', `/rest/raven/1.0/api/testrepository/${projectKey}/folders`, basicAuth);
+  if (res.status !== 200) throw new Error(res.data?.message || 'Failed to load folder tree from Xray');
+  return res.data;
+}
+
+// Recursively annotate each folder node with its full path string and return a flat map
+function buildFolderPathMap(node, parentPath = '') {
+  const map = {};
+  if (!node) return map;
+  const folders = node.folders || [];
+  for (const f of folders) {
+    const p = parentPath ? `${parentPath}/${f.name}` : `/${f.name}`;
+    map[p] = f;
+    Object.assign(map, buildFolderPathMap(f, p));
+  }
+  return map;
+}
+
+// Given a target path, return the Xray DC folder node (with .id)
+function findFolderByPath(tree, targetPath) {
+  if (!targetPath || targetPath === '/') return { id: -1, folders: tree.folders || [] };
+  const map = buildFolderPathMap(tree);
+  return map[targetPath] || null;
+}
+
+// Convert an Xray DC folder node into the shape the frontend expects
+// (name, path, testsCount, folders[…])
+function normalizeFolderNode(node, nodePath) {
+  const sub = (node.folders || []).map(f => {
+    const childPath = nodePath ? `${nodePath}/${f.name}` : `/${f.name}`;
+    return normalizeFolderNode(f, childPath);
+  });
+  return {
+    id:         node.id,
+    name:       node.name,
+    path:       nodePath,
+    testsCount: node.testCount || 0,
+    folders:    sub
+  };
 }
 
 // ─── Router ──────────────────────────────────────────────────────────────────
@@ -170,16 +214,18 @@ async function router(req, res) {
 
   // POST /api/auth/login
   if (method === 'POST' && pathname === '/api/auth/login') {
-    const { username, password, projectKey, jiraUrl } = await readBody(req);
+    const { username, password, projectKey } = await readBody(req);
     if (!username || !password || !projectKey) {
       return json(res, 400, { error: 'Username, Password and Project Key are required.' });
     }
+    if (!JIRA_BASE_URL) {
+      return json(res, 500, { error: 'Server is not configured: JIRA_BASE_URL environment variable is missing.' });
+    }
     try {
-      const token = await xrayAuth(username, password);
-      const sid   = createSession({
-        xrayToken:  token,
-        projectKey: projectKey.toUpperCase().trim(),
-        jiraUrl:    (jiraUrl || '').replace(/\/$/, '')
+      const basicAuth = await jiraAuth(username, password);
+      const sid = createSession({
+        basicAuth,
+        projectKey: projectKey.toUpperCase().trim()
       });
       return json(res, 200, { success: true, projectKey: projectKey.toUpperCase().trim() }, {
         'Set-Cookie': `jtmf_sid=${sid}; HttpOnly; Path=/; Max-Age=28800`
@@ -208,34 +254,28 @@ async function router(req, res) {
   const sess = getSession(req);
   if (!sess) return json(res, 401, { error: 'Session expired. Please log in again.' });
 
-  const { xrayToken, projectKey, jiraUrl } = sess;
+  const { basicAuth, projectKey } = sess;
   const query = parsed.query;
 
   // GET /api/folders?path=/...
   if (method === 'GET' && pathname === '/api/folders') {
     const folderPath = query.path || '/';
     try {
-      const data = await xrayGql(xrayToken, `
-        query GetFolder($projectId: String!, $path: String!) {
-          getFolder(projectId: $projectId, path: $path) {
-            name path testsCount
-            folders {
-              name path testsCount
-              folders {
-                name path testsCount
-                folders {
-                  name path testsCount
-                  folders {
-                    name path testsCount
-                    folders { name path testsCount }
-                  }
-                }
-              }
-            }
-          }
-        }
-      `, { projectId: projectKey, path: folderPath });
-      return json(res, 200, { folder: data.getFolder });
+      const tree   = await xrayFolderTree(projectKey, basicAuth);
+      const folderMap = buildFolderPathMap(tree);
+
+      let node, nodePath;
+      if (!folderPath || folderPath === '/') {
+        // Return a virtual root containing top-level folders
+        node     = { id: -1, name: '(root)', testCount: 0, folders: tree.folders || [] };
+        nodePath = '';
+      } else {
+        node     = folderMap[folderPath];
+        nodePath = folderPath;
+      }
+
+      if (!node) return json(res, 404, { error: `Folder not found: ${folderPath}` });
+      return json(res, 200, { folder: normalizeFolderNode(node, nodePath) });
     } catch (err) {
       return json(res, 500, { error: err.message });
     }
@@ -244,16 +284,26 @@ async function router(req, res) {
   // POST /api/folders/create  { path }
   if (method === 'POST' && pathname === '/api/folders/create') {
     const { path: folderPath } = await readBody(req);
+    if (!folderPath) return json(res, 400, { error: 'path is required' });
     try {
-      const data = await xrayGql(xrayToken, `
-        mutation CreateFolder($projectId: String!, $path: String!) {
-          createFolder(projectId: $projectId, path: $path) {
-            folder { name path testsCount }
-            warnings
-          }
-        }
-      `, { projectId: projectKey, path: folderPath });
-      return json(res, 200, data.createFolder);
+      // Resolve parent folder ID
+      const parts      = folderPath.replace(/^\//,'').split('/');
+      const folderName = parts.pop();
+      const parentPath = parts.length ? '/' + parts.join('/') : '';
+
+      const tree      = await xrayFolderTree(projectKey, basicAuth);
+      const folderMap = buildFolderPathMap(tree);
+      const parentId  = parentPath ? (folderMap[parentPath]?.id ?? -1) : -1;
+
+      const res2 = await jiraReq('POST',
+        `/rest/raven/1.0/api/testrepository/${projectKey}/folders/${parentId}`,
+        basicAuth,
+        { name: folderName }
+      );
+      if (res2.status !== 200 && res2.status !== 201) {
+        throw new Error(res2.data?.message || `Failed to create folder (${res2.status})`);
+      }
+      return json(res, 200, { folder: { name: folderName, path: folderPath } });
     } catch (err) {
       return json(res, 500, { error: err.message });
     }
@@ -328,19 +378,35 @@ async function router(req, res) {
     const { folderPath, limit = '50', start = '0' } = query;
     if (!folderPath) return json(res, 400, { error: 'folderPath is required' });
     try {
-      const jql = `project = "${projectKey}" AND folder = "${folderPath}"`;
-      const data = await xrayGql(xrayToken, `
-        query GetTests($jql: String!, $limit: Int!, $start: Int!) {
-          getTests(jql: $jql, limit: $limit, start: $start) {
-            total start limit
-            results {
-              issueId
-              jira(fields: ["summary", "status", "labels", "priority", "assignee", "components"])
-            }
-          }
+      // Use Jira search with Xray DC's JQL folder extension
+      const jql     = `project = "${projectKey}" AND folder = "${folderPath}"`;
+      const params  = new URLSearchParams({
+        jql,
+        fields:     'summary,status,labels,priority,assignee,components,issuetype',
+        maxResults: limit,
+        startAt:    start
+      });
+      const res2 = await jiraReq('GET', `/rest/api/2/search?${params}`, basicAuth);
+      if (res2.status !== 200) throw new Error(res2.data?.errorMessages?.[0] || 'Jira search failed');
+
+      const issues = res2.data.issues || [];
+      const results = issues.map(issue => ({
+        issueId: issue.key,
+        jira: {
+          summary:    issue.fields.summary,
+          labels:     issue.fields.labels     || [],
+          status:     issue.fields.status,
+          priority:   issue.fields.priority,
+          assignee:   issue.fields.assignee,
+          components: issue.fields.components || []
         }
-      `, { jql, limit: parseInt(limit), start: parseInt(start) });
-      return json(res, 200, data.getTests);
+      }));
+      return json(res, 200, {
+        total:   res2.data.total,
+        start:   res2.data.startAt,
+        limit:   res2.data.maxResults,
+        results
+      });
     } catch (err) {
       return json(res, 500, { error: err.message });
     }
@@ -353,23 +419,35 @@ async function router(req, res) {
       return json(res, 400, { error: 'testIssueIds and targetPath are required.' });
     }
     try {
-      // Ensure destination folder exists
-      await xrayGql(xrayToken, `
-        mutation CreateFolder($projectId: String!, $path: String!) {
-          createFolder(projectId: $projectId, path: $path) { folder { path } warnings }
-        }
-      `, { projectId: projectKey, path: targetPath }).catch(() => {});
+      // Resolve (or create) the target folder
+      const tree      = await xrayFolderTree(projectKey, basicAuth);
+      const folderMap = buildFolderPathMap(tree);
+      let   targetId  = folderMap[targetPath]?.id;
 
-      // Move tests
-      const data = await xrayGql(xrayToken, `
-        mutation AddTests($projectId: String!, $path: String!, $testIssueIds: [String]!) {
-          addTestsToFolder(projectId: $projectId, path: $path, testIssueIds: $testIssueIds) {
-            folder { name path testsCount }
-            warnings
-          }
-        }
-      `, { projectId: projectKey, path: targetPath, testIssueIds });
-      return json(res, 200, data.addTestsToFolder);
+      // Auto-create the folder if it doesn't exist
+      if (!targetId) {
+        const parts      = targetPath.replace(/^\//,'').split('/');
+        const folderName = parts.pop();
+        const parentPath = parts.length ? '/' + parts.join('/') : '';
+        const parentId   = parentPath ? (folderMap[parentPath]?.id ?? -1) : -1;
+        const createRes  = await jiraReq('POST',
+          `/rest/raven/1.0/api/testrepository/${projectKey}/folders/${parentId}`,
+          basicAuth, { name: folderName }
+        );
+        targetId = createRes.data?.id || createRes.data?.folder?.id;
+        if (!targetId) throw new Error(`Could not create or find folder: ${targetPath}`);
+      }
+
+      // Move tests into the resolved folder
+      const moveRes = await jiraReq('PUT',
+        `/rest/raven/1.0/api/testrepository/${projectKey}/folders/${targetId}/tests`,
+        basicAuth,
+        { add: testIssueIds, remove: [] }
+      );
+      if (moveRes.status !== 200 && moveRes.status !== 204) {
+        throw new Error(moveRes.data?.message || `Move failed (status ${moveRes.status})`);
+      }
+      return json(res, 200, { success: true, movedCount: testIssueIds.length, targetPath });
     } catch (err) {
       return json(res, 500, { error: err.message });
     }
@@ -381,39 +459,16 @@ async function router(req, res) {
     if (!testIssueIds?.length || !labels?.length) {
       return json(res, 400, { error: 'testIssueIds and labels are required.' });
     }
-    // Prefer server-level env JIRA_BASE_URL, fall back to per-session jiraUrl
-    const effectiveJiraUrl = JIRA_BASE_URL || jiraUrl;
-    if (!effectiveJiraUrl) {
-      return json(res, 400, { error: 'Jira URL not configured. Set JIRA_BASE_URL env variable or provide it at login.' });
-    }
-    const jiraHost = effectiveJiraUrl.replace('https://', '').replace('http://', '');
-    const results  = [];
-
+    const results = [];
     for (const issueId of testIssueIds) {
       try {
-        const getRes = await httpsRequest({
-          hostname: jiraHost,
-          path: `/rest/api/3/issue/${issueId}?fields=labels`,
-          method: 'GET',
-          headers: { 'Authorization': `Bearer ${xrayToken}`, 'Content-Type': 'application/json' }
-        });
-        const current = (getRes.data?.fields?.labels || []);
+        const getRes = await jiraReq('GET', `/rest/api/2/issue/${issueId}?fields=labels`, basicAuth);
+        const current = getRes.data?.fields?.labels || [];
         let next;
-        if (action === 'add')    next = [...new Set([...current, ...labels])];
+        if (action === 'add')         next = [...new Set([...current, ...labels])];
         else if (action === 'remove') next = current.filter(l => !labels.includes(l));
-        else                     next = labels;
-
-        const putBody = JSON.stringify({ fields: { labels: next } });
-        await httpsRequest({
-          hostname: jiraHost,
-          path: `/rest/api/3/issue/${issueId}`,
-          method: 'PUT',
-          headers: {
-            'Authorization': `Bearer ${xrayToken}`,
-            'Content-Type': 'application/json',
-            'Content-Length': Buffer.byteLength(putBody)
-          }
-        }, putBody);
+        else                          next = labels;
+        await jiraReq('PUT', `/rest/api/2/issue/${issueId}`, basicAuth, { fields: { labels: next } });
         results.push({ issueId, success: true });
       } catch (e) {
         results.push({ issueId, success: false, error: e.message });
